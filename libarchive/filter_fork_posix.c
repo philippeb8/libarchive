@@ -76,7 +76,9 @@ pid_t
 __archive_create_child(const char *cmd, int *child_stdin, int *child_stdout)
 {
 	pid_t child;
-	int stdin_pipe[2], stdout_pipe[2], tmp;
+	int stdin_pipe[2];
+        int stdout_pipe[2];
+        int tmp;
 #if HAVE_POSIX_SPAWNP
 	posix_spawn_file_actions_t actions;
 	int r;
@@ -163,7 +165,8 @@ __archive_create_child(const char *cmd, int *child_stdin, int *child_stdout)
 			_exit(254);
 		if (stdout_pipe[1] != 1 /* stdout */)
 			close(stdout_pipe[1]);
-		execvp(cmdline->path, cmdline->argv);
+                printf("execvp\n");
+		execvp(cmdline->path, 0); //!
 		_exit(254);
 	}
 #endif /* HAVE_POSIX_SPAWNP */

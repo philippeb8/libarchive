@@ -80,7 +80,7 @@ static const char base64[] = {
 int
 archive_write_add_filter_b64encode(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *f = __archive_write_allocate_filter(_a);
 	struct private_b64encode *state;
 

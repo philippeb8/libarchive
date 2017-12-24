@@ -58,19 +58,6 @@ archive_write_set_compression_program(struct archive *a, const char *cmd)
 }
 #endif
 
-struct archive_write_program_data {
-#if defined(_WIN32) && !defined(__CYGWIN__)
-	HANDLE		 child;
-#else
-	pid_t		 child;
-#endif
-	int		 child_stdin, child_stdout;
-
-	char		*child_buf;
-	size_t		 child_buf_len, child_buf_avail;
-	char		*program_name;
-};
-
 struct private_data {
 	struct archive_write_program_data *pdata;
 	struct archive_string description;

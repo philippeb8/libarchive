@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 /* Maximum lookahead during bid phase */
 #define UUENCODE_BID_MAX_READ 128*1024 /* in bytes */
@@ -79,7 +80,7 @@ archive_read_support_compression_uu(struct archive *a)
 int
 archive_read_support_filter_uu(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -92,8 +93,8 @@ archive_read_support_filter_uu(struct archive *_a)
 	bidder->name = "uu";
 	bidder->bid = uudecode_bidder_bid;
 	bidder->init = uudecode_bidder_init;
-	bidder->options = NULL;
-	bidder->free = NULL;
+	bidder->options = 0;
+	bidder->free = 0;
 	return (ARCHIVE_OK);
 }
 
@@ -382,7 +383,7 @@ uudecode_bidder_init(struct archive_read_filter *self)
 	self->code = ARCHIVE_FILTER_UU;
 	self->name = "uu";
 	self->read = uudecode_filter_read;
-	self->skip = NULL; /* not supported */
+	self->skip = 0; /* not supported */
 	self->close = uudecode_filter_close;
 
 	uudecode = (struct uudecode *)calloc(sizeof(*uudecode), 1);

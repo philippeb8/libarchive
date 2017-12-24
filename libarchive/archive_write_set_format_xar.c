@@ -86,7 +86,7 @@ __FBSDID("$FreeBSD$");
 int
 archive_write_set_format_xar(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 
 	archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
 	    "Xar not supported on this platform");
@@ -336,7 +336,7 @@ static const char *getalgname(enum sumalg);
 int
 archive_write_set_format_xar(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct xar *xar;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
@@ -2621,7 +2621,7 @@ compression_init_encoder_gzip(struct archive *a,
 	/* zlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (Bytef *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (Bytef *)(const void *)lastrm->next_in;
 	strm->avail_in = lastrm->avail_in;
 	strm->total_in = (uLong)lastrm->total_in;
 	strm->next_out = lastrm->next_out;
@@ -2654,7 +2654,7 @@ compression_code_gzip(struct archive *a,
 	/* zlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (Bytef *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (Bytef *)(const void *)lastrm->next_in;
 	strm->avail_in = lastrm->avail_in;
 	strm->total_in = (uLong)lastrm->total_in;
 	strm->next_out = lastrm->next_out;
@@ -2718,7 +2718,7 @@ compression_init_encoder_bzip2(struct archive *a,
 	/* bzlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (char *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (char *)(const void *)lastrm->next_in;
 	strm->avail_in = lastrm->avail_in;
 	strm->total_in_lo32 = (uint32_t)(lastrm->total_in & 0xffffffff);
 	strm->total_in_hi32 = (uint32_t)(lastrm->total_in >> 32);
@@ -2751,7 +2751,7 @@ compression_code_bzip2(struct archive *a,
 	/* bzlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (char *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (char *)(const void *)lastrm->next_in;
 	strm->avail_in = lastrm->avail_in;
 	strm->total_in_lo32 = (uint32_t)(lastrm->total_in & 0xffffffff);
 	strm->total_in_hi32 = (uint32_t)(lastrm->total_in >> 32);

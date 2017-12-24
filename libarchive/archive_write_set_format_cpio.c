@@ -43,6 +43,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_set_format_cpio.c 201170 2
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 static ssize_t	archive_write_cpio_data(struct archive_write *,
 		    const void *buff, size_t s);
@@ -57,12 +58,14 @@ static int	format_octal(int64_t, void *, int);
 static int64_t	format_octal_recursive(int64_t, char *, int);
 static int	write_header(struct archive_write *, struct archive_entry *);
 
+struct ino_ { int64_t old; int fresh;};
+
 struct cpio {
 	uint64_t	  entry_bytes_remaining;
 
 	int64_t		  ino_next;
 
-	struct		 { int64_t old; int new;} *ino_list;
+	struct ino_ *ino_list;
 	size_t		  ino_list_size;
 	size_t		  ino_list_next;
 
@@ -100,14 +103,14 @@ struct cpio {
 int
 archive_write_set_format_cpio(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct cpio *cpio;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_cpio");
 
 	/* If someone else was already registered, unregister them. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	cpio = (struct cpio *)calloc(1, sizeof(*cpio));
@@ -196,7 +199,7 @@ synthesize_ino_value(struct cpio *cpio, struct archive_entry *entry)
 	 * and we reuse the same value. */
 	for (i = 0; i < cpio->ino_list_next; ++i) {
 		if (cpio->ino_list[i].old == ino)
-			return (cpio->ino_list[i].new);
+			return (cpio->ino_list[i].fresh);
 	}
 
 	/* Assign a new index number. */
@@ -206,7 +209,7 @@ synthesize_ino_value(struct cpio *cpio, struct archive_entry *entry)
 	if (cpio->ino_list_size <= cpio->ino_list_next) {
 		size_t newsize = cpio->ino_list_size < 512
 		    ? 512 : cpio->ino_list_size * 2;
-		void *newlist = realloc(cpio->ino_list,
+		struct ino_ *newlist = realloc(cpio->ino_list,
 		    sizeof(cpio->ino_list[0]) * newsize);
 		if (newlist == NULL)
 			return (-1);
@@ -217,7 +220,7 @@ synthesize_ino_value(struct cpio *cpio, struct archive_entry *entry)
 
 	/* Record and return the new value. */
 	cpio->ino_list[cpio->ino_list_next].old = ino;
-	cpio->ino_list[cpio->ino_list_next].new = ino_new;
+	cpio->ino_list[cpio->ino_list_next].fresh = ino_new;
 	++cpio->ino_list_next;
 	return (ino_new);
 }

@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 static const unsigned char grzip_magic[] = {
 	0x47, 0x52, 0x5a, 0x69, 0x70, 0x49, 0x49, 0x00,
@@ -64,7 +65,7 @@ grzip_reader_free(struct archive_read_filter_bidder *self)
 int
 archive_read_support_filter_grzip(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *reader;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -76,7 +77,7 @@ archive_read_support_filter_grzip(struct archive *_a)
 	reader->data = NULL;
 	reader->bid = grzip_bidder_bid;
 	reader->init = grzip_bidder_init;
-	reader->options = NULL;
+	reader->options = 0;
 	reader->free = grzip_reader_free;
 	/* This filter always uses an external program. */
 	archive_set_error(_a, ARCHIVE_ERRNO_MISC,

@@ -5,6 +5,16 @@ can read and write streaming archives in a variety of formats.  It
 also includes implementations of the common `tar`, `cpio`, and `zcat`
 command-line tools that use the libarchive library.
 
+## Fornux C Leak Detector Diagnosis
+
+[2017-12-24 16:20:04.536311] [0x00007fd0b34f3fc0] [info]    <cycle>: 0# archive_read_open_filenames(boost::node_proxy&, boost::root_ptr<std::vector<archive, std::allocator<archive> > >, boost::root_ptr<std::vector<boost::root_ptr<std::vector<char, std::allocator<char> > >, std::allocator<boost::root_ptr<std::vector<char, std::allocator<char> > > > > >, unsigned long) at /home/philippeb8/devel/1/libarchive-3.2.2/libarchive/archive_read_open_filename.c:164
+
+[2017-12-24 16:20:04.614519] [0x00007fd0b34f3fc0] [info]    "p": 0# gnu_clear_sparse_list(boost::node_proxy&, boost::root_ptr<std::vector<tar, std::allocator<tar> > >) at /home/philippeb8/devel/1/libarchive-3.2.2/libarchive/archive_read_support_format_tar.c:2119
+
+[2017-12-24 16:20:04.677372] [0x00007fd0b34f3fc0] [info]    "tar": 0# archive_read_format_tar_cleanup(boost::node_proxy&, boost::root_ptr<std::vector<archive_read, std::allocator<archive_read> > >) at /home/philippeb8/devel/1/libarchive-3.2.2/libarchive/archive_read_support_format_tar.c:237
+
+[2017-12-24 16:20:04.734981] [0x00007fd0b34f3fc0] [info]    "client_buff": 0# ~archive_read_filter at /home/philippeb8/devel/1/libarchive-3.2.2/libarchive/archive_read_private.h:82
+
 ## Questions?  Issues?
 
 * http://www.libarchive.org is the home for ongoing

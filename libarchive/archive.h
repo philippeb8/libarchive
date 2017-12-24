@@ -43,6 +43,9 @@
 #include <stdio.h> /* For FILE * */
 #include <time.h> /* For time_t */
 
+#define _offsetof(type, member) (&(((type *)NULL)->member))
+#define _containerof(ptr, type, member) ((type *)(void *)((char *)(void *)(ptr) - (char *)(void *)_offsetof(type, member)))
+
 /*
  * Note: archive.h is for use outside of libarchive; the configuration
  * headers (config.h, archive_platform.h, etc.) are purely internal.
@@ -181,6 +184,7 @@ __LA_DECL const char *  archive_liblz4_version(void);
 /* Declare our basic types. */
 struct archive;
 struct archive_entry;
+struct archive_write_disk;
 
 /*
  * Error codes: Use archive_errno() and archive_error_string()
@@ -375,7 +379,7 @@ typedef const char *archive_passphrase_callback(struct archive *,
  *      data for entries of interest.
  *   5) Call archive_read_finish to end processing.
  */
-__LA_DECL struct archive	*archive_read_new(void);
+__LA_DECL struct archive_read	*archive_read_new(void);
 
 /*
  * The archive_read_support_XXX calls enable auto-detect for this
@@ -894,7 +898,7 @@ __LA_DECL int archive_write_set_passphrase_callback(struct archive *,
  * In particular, you can use this in conjunction with archive_read()
  * to pull entries out of an archive and create them on disk.
  */
-__LA_DECL struct archive	*archive_write_disk_new(void);
+__LA_DECL struct archive_write_disk	*archive_write_disk_new(void);
 /* This file will not be overwritten. */
 __LA_DECL int archive_write_disk_set_skip_file(struct archive *,
     la_int64_t, la_int64_t);
@@ -1172,6 +1176,45 @@ __LA_DECL int	archive_match_include_gname_w(struct archive *,
 /* Utility functions */
 /* Convenience function to sort a NULL terminated list of strings */
 __LA_DECL int archive_utility_string_sort(char **);
+
+/*
+ * Basic resizable/reusable string support similar to Java's "StringBuffer."
+ *
+ * Unlike sbuf(9), the buffers here are fully reusable and track the
+ * length throughout.
+ */
+
+struct archive_string {
+	char	*s;  /* Pointer to the storage */
+	size_t	 length; /* Length of 's' in characters */
+	size_t	 buffer_length; /* Length of malloc-ed storage in bytes. */
+};
+
+struct archive_wstring {
+	wchar_t	*s;  /* Pointer to the storage */
+	size_t	 length; /* Length of 's' in characters */
+	size_t	 buffer_length; /* Length of malloc-ed storage in bytes. */
+};
+
+/* A "multistring" can hold Unicode, UTF8, or MBS versions of
+ * the string.  If you set and read the same version, no translation
+ * is done.  If you set and read different versions, the library
+ * will attempt to transparently convert.
+ */
+struct archive_mstring {
+	struct archive_string aes_mbs;
+	struct archive_string aes_utf8;
+	struct archive_wstring aes_wcs;
+	struct archive_string aes_mbs_in_locale;
+	/* Bitmap of which of the above are valid.  Because we're lazy
+	 * about malloc-ing and reusing the underlying storage, we
+	 * can't rely on NULL pointers to indicate whether a string
+	 * has been set. */
+	int aes_set;
+#define	AES_SET_MBS 1
+#define	AES_SET_UTF8 2
+#define	AES_SET_WCS 4
+};
 
 #ifdef __cplusplus
 }

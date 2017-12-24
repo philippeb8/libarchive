@@ -37,6 +37,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_raw.c 201107
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 struct raw_info {
 	int64_t offset; /* Current position in the file. */
@@ -56,7 +57,7 @@ int
 archive_read_support_format_raw(struct archive *_a)
 {
 	struct raw_info *info;
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	int r;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -73,14 +74,14 @@ archive_read_support_format_raw(struct archive *_a)
 	    info,
 	    "raw",
 	    archive_read_format_raw_bid,
-	    NULL,
+	    0,
 	    archive_read_format_raw_read_header,
 	    archive_read_format_raw_read_data,
 	    archive_read_format_raw_read_data_skip,
-	    NULL,
+	    0,
 	    archive_read_format_raw_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 	if (r != ARCHIVE_OK)
 		free(info);
 	return (r);

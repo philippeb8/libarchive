@@ -43,7 +43,7 @@ __FBSDID("$FreeBSD$");
 
 /* A table that maps names to functions. */
 static
-struct { const char *name; int (*setter)(struct archive *); } names[] =
+struct names_ { const char *name; int (*setter)(struct archive *); } names[] =
 {
 	{ "b64encode",		archive_write_add_filter_b64encode },
 	{ "bzip2",		archive_write_add_filter_bzip2 },
@@ -57,7 +57,7 @@ struct { const char *name; int (*setter)(struct archive *); } names[] =
 	{ "lzop",		archive_write_add_filter_lzop },
 	{ "uuencode",		archive_write_add_filter_uuencode },
 	{ "xz",			archive_write_add_filter_xz },
-	{ NULL,			NULL }
+	{ NULL,			0 }
 };
 
 int

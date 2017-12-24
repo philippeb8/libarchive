@@ -39,9 +39,9 @@ typedef struct CPpmd7_Context_
   CPpmd7_Context_Ref Suffix;
 } CPpmd7_Context;
 
-#define Ppmd7Context_OneState(p) ((CPpmd_State *)&(p)->SummFreq)
+#define Ppmd7Context_OneState(p) ((CPpmd_State *)(void *)&p->SummFreq)
 
-typedef struct
+typedef struct CPpmd7_
 {
   CPpmd7_Context *MinContext, *MaxContext;
   CPpmd_State *FoundState;
@@ -57,20 +57,21 @@ typedef struct
   Byte Units2Indx[128];
   CPpmd_Void_Ref FreeList[PPMD_NUM_INDEXES];
   Byte NS2Indx[256], NS2BSIndx[256], HB2Flag[256];
-  CPpmd_See DummySee, See[25][16];
+  CPpmd_See DummySee;
+  CPpmd_See See[25][16];
   UInt16 BinSumm[128][64];
 } CPpmd7;
 
 /* ---------- Decode ---------- */
 
-typedef struct
+typedef struct IPpmd7_RangeDec_
 {
   UInt32 (*GetThreshold)(void *p, UInt32 total);
   void (*Decode)(void *p, UInt32 start, UInt32 size);
   UInt32 (*DecodeBit)(void *p, UInt32 size0);
 } IPpmd7_RangeDec;
 
-typedef struct
+typedef struct CPpmd7z_RangeDec_
 {
   IPpmd7_RangeDec p;
   UInt32 Range;
@@ -82,7 +83,7 @@ typedef struct
 
 /* ---------- Encode ---------- */
 
-typedef struct
+typedef struct CPpmd7z_RangeEnc_
 {
   UInt64 Low;
   UInt32 Range;
@@ -91,7 +92,7 @@ typedef struct
   IByteOut *Stream;
 } CPpmd7z_RangeEnc;
 
-typedef struct
+typedef struct IPpmd7_
 {
   /* Base Functions */
   void (*Ppmd7_Construct)(CPpmd7 *p);

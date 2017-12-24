@@ -30,6 +30,7 @@ __FBSDID("$FreeBSD$");
 #include <errno.h>
 #endif
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 static void
 add_passphrase_to_tail(struct archive_read *a,
@@ -83,7 +84,7 @@ new_read_passphrase(struct archive_read *a, const char *passphrase)
 int
 archive_read_add_passphrase(struct archive *_a, const char *passphrase)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_passphrase *p;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC, ARCHIVE_STATE_NEW,
@@ -107,7 +108,7 @@ int
 archive_read_set_passphrase_callback(struct archive *_a, void *client_data,
     archive_passphrase_callback *cb)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC, ARCHIVE_STATE_NEW,
 		"archive_read_set_passphrase_callback");
@@ -166,7 +167,7 @@ __archive_read_next_passphrase(struct archive_read *a)
 
 	if (p != NULL)
 		passphrase = p->passphrase;
-	else if (a->passphrases.callback != NULL) {
+	else if (a->passphrases.callback != 0) {
 		/* Get a passphrase through a call-back function
 		 * since we tried all passphrases out or we don't
 		 * have it. */

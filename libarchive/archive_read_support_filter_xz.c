@@ -51,6 +51,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_endian.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #if HAVE_LZMA_H && HAVE_LIBLZMA
 
@@ -126,7 +127,7 @@ archive_read_support_compression_xz(struct archive *a)
 int
 archive_read_support_filter_xz(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -139,8 +140,8 @@ archive_read_support_filter_xz(struct archive *_a)
 	bidder->name = "xz";
 	bidder->bid = xz_bidder_bid;
 	bidder->init = xz_bidder_init;
-	bidder->options = NULL;
-	bidder->free = NULL;
+	bidder->options = 0;
+	bidder->free = 0;
 #if HAVE_LZMA_H && HAVE_LIBLZMA
 	return (ARCHIVE_OK);
 #else
@@ -161,7 +162,7 @@ archive_read_support_compression_lzma(struct archive *a)
 int
 archive_read_support_filter_lzma(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -174,8 +175,8 @@ archive_read_support_filter_lzma(struct archive *_a)
 	bidder->name = "lzma";
 	bidder->bid = lzma_bidder_bid;
 	bidder->init = lzma_bidder_init;
-	bidder->options = NULL;
-	bidder->free = NULL;
+	bidder->options = 0;
+	bidder->free = 0;
 #if HAVE_LZMA_H && HAVE_LIBLZMA
 	return (ARCHIVE_OK);
 #elif HAVE_LZMADEC_H && HAVE_LIBLZMADEC
@@ -199,7 +200,7 @@ archive_read_support_compression_lzip(struct archive *a)
 int
 archive_read_support_filter_lzip(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -212,8 +213,8 @@ archive_read_support_filter_lzip(struct archive *_a)
 	bidder->name = "lzip";
 	bidder->bid = lzip_bidder_bid;
 	bidder->init = lzip_bidder_init;
-	bidder->options = NULL;
-	bidder->free = NULL;
+	bidder->options = 0;
+	bidder->free = 0;
 #if HAVE_LZMA_H && HAVE_LIBLZMA
 	return (ARCHIVE_OK);
 #else
@@ -802,7 +803,7 @@ lzma_bidder_init(struct archive_read_filter *self)
 	self->close = lzma_filter_close;
 
 	/* Prime the lzma library with 18 bytes of input. */
-	state->stream.next_in = (unsigned char *)(uintptr_t)
+	state->stream.next_in = (unsigned char *)
 	    __archive_read_filter_ahead(self->upstream, 18, &avail_in);
 	if (state->stream.next_in == NULL)
 		return (ARCHIVE_FATAL);
@@ -860,7 +861,7 @@ lzma_filter_read(struct archive_read_filter *self, const void **p)
 
 	/* Try to fill the output buffer. */
 	while (state->stream.avail_out > 0 && !state->eof) {
-		state->stream.next_in = (unsigned char *)(uintptr_t)
+		state->stream.next_in = (unsigned char *)
 		    __archive_read_filter_ahead(self->upstream, 1, &avail_in);
 		if (state->stream.next_in == NULL && avail_in < 0) {
 			archive_set_error(&self->archive->archive,

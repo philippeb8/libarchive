@@ -34,12 +34,14 @@ __FBSDID("$FreeBSD: src/lib/libarchive/archive_read_extract.c,v 1.61 2008/05/26 
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_write_disk_private.h"
+#include "archive_entry_private.h"
 
 int
 archive_read_extract(struct archive *_a, struct archive_entry *entry, int flags)
 {
-	struct archive_read_extract *extract;
-	struct archive_read * a = (struct archive_read *)_a;
+	struct archive_read_extract_ *extract;
+	struct archive_read * a = _containerof(_a, struct archive_read, archive);
 
 	extract = __archive_read_get_extract(a);
 	if (extract == NULL)
@@ -47,7 +49,7 @@ archive_read_extract(struct archive *_a, struct archive_entry *entry, int flags)
 
 	/* If we haven't initialized the archive_write_disk object, do it now. */
 	if (extract->ad == NULL) {
-		extract->ad = archive_write_disk_new();
+		extract->ad = & archive_write_disk_new()->archive;
 		if (extract->ad == NULL) {
 			archive_set_error(&a->archive, ENOMEM, "Can't extract");
 			return (ARCHIVE_FATAL);

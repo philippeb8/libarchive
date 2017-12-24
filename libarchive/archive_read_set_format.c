@@ -33,13 +33,14 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 int
 archive_read_set_format(struct archive *_a, int code)
 {
   int r1, r2, slots, i;
   char str[10];
-  struct archive_read *a = (struct archive_read *)_a;
+  struct archive_read *a = _containerof(_a, struct archive_read, archive);
 
   if ((r1 = archive_read_support_format_by_code(_a, code)) < (ARCHIVE_OK))
     return r1;

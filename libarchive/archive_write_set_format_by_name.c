@@ -42,7 +42,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_set_format_by_name.c 20116
 
 /* A table that maps names to functions. */
 static
-struct { const char *name; int (*setter)(struct archive *); } names[] =
+struct names_ { const char *name; int (*setter)(struct archive *); } names[] =
 {
 	{ "7zip",	archive_write_set_format_7zip },
 	{ "ar",		archive_write_set_format_ar_bsd },
@@ -73,7 +73,7 @@ struct { const char *name; int (*setter)(struct archive *); } names[] =
 	{ "warc",	archive_write_set_format_warc },
 	{ "xar",	archive_write_set_format_xar },
 	{ "zip",	archive_write_set_format_zip },
-	{ NULL,		NULL }
+	{ NULL,		0 }
 };
 
 int

@@ -44,6 +44,8 @@
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_endian.h"
+#include "archive_entry_private.h"
+#include <archive_read_support_format_lha_private.h>
 
 
 #define MAXMATCH		256	/* Maximum match length. */
@@ -62,6 +64,47 @@
 /* Position table size.
  * Note: this used for both position table and pre literal table.*/
 #define PT_BITLEN_SIZE		(3 + 16)
+
+struct lzh_br {
+#define CACHE_TYPE		uint64_t
+#define CACHE_BITS		(8 * sizeof(CACHE_TYPE))
+        /* Cache buffer. */
+        CACHE_TYPE	 cache_buffer;
+        /* Indicates how many bits avail in cache_buffer. */
+        int		 cache_avail;
+};
+
+/*
+    * Huffman coding.
+    */
+struct htree_t {
+        uint16_t left;
+        uint16_t right;
+};
+
+struct huffman {
+        int		 len_size;
+        int		 len_avail;
+        int		 len_bits;
+        int		 freq[17];
+        unsigned char	*bitlen;
+
+        /*
+            * Use a index table. It's faster than searching a huffman
+            * coding tree, which is a binary tree. But a use of a large
+            * index table causes L1 cache read miss many times.
+            */
+#define HTBL_BITS	10
+        int		 max_bits;
+        int		 shift_bits;
+        int		 tbl_bits;
+        int		 tree_used;
+        int		 tree_avail;
+        /* Direct access table. */
+        uint16_t	*tbl;
+        /* Binary tree table for extra bits over the direct access. */
+        struct htree_t  *tree;
+};
 
 struct lzh_dec {
 	/* Decoding status. */
@@ -86,44 +129,12 @@ struct lzh_dec {
 	/*
 	 * Bit stream reader.
 	 */
-	struct lzh_br {
-#define CACHE_TYPE		uint64_t
-#define CACHE_BITS		(8 * sizeof(CACHE_TYPE))
-	 	/* Cache buffer. */
-		CACHE_TYPE	 cache_buffer;
-		/* Indicates how many bits avail in cache_buffer. */
-		int		 cache_avail;
-	} br;
+	struct lzh_br            br;
 
 	/*
 	 * Huffman coding.
 	 */
-	struct huffman {
-		int		 len_size;
-		int		 len_avail;
-		int		 len_bits;
-		int		 freq[17];
-		unsigned char	*bitlen;
-
-		/*
-		 * Use a index table. It's faster than searching a huffman
-		 * coding tree, which is a binary tree. But a use of a large
-		 * index table causes L1 cache read miss many times.
-		 */
-#define HTBL_BITS	10
-		int		 max_bits;
-		int		 shift_bits;
-		int		 tbl_bits;
-		int		 tree_used;
-		int		 tree_avail;
-		/* Direct access table. */
-		uint16_t	*tbl;
-		/* Binary tree table for extra bits over the direct access. */
-		struct htree_t {
-			uint16_t left;
-			uint16_t right;
-		}		*tree;
-	}			 lt, pt;
+	struct huffman           lt, pt;
 
 	int			 blocks_avail;
 	int			 pos_pt_len_size;
@@ -256,7 +267,7 @@ static int	lzh_decode_huffman_tree(struct huffman *, unsigned, int);
 int
 archive_read_support_format_lha(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct lha *lha;
 	int r;
 
@@ -279,10 +290,10 @@ archive_read_support_format_lha(struct archive *_a)
 	    archive_read_format_lha_read_header,
 	    archive_read_format_lha_read_data,
 	    archive_read_format_lha_read_data_skip,
-	    NULL,
+	    0,
 	    archive_read_format_lha_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 
 	if (r != ARCHIVE_OK)
 		free(lha);
@@ -503,7 +514,7 @@ archive_read_format_lha_read_header(struct archive_read *a,
 		return (truncated_error(a));
 	}
 
-	signature = (const char *)p;
+	signature = (const char *)(void *)p;
 	if (lha->found_first_header == 0 &&
 	    signature[0] == 'M' && signature[1] == 'Z') {
                 /* This is an executable?  Must be self-extracting... 	*/
@@ -513,7 +524,7 @@ archive_read_format_lha_read_header(struct archive_read *a,
 
 		if ((p = __archive_read_ahead(a, sizeof(*p), NULL)) == NULL)
 			return (truncated_error(a));
-		signature = (const char *)p;
+		signature = (const char *)(void *)p;
 	}
 	/* signature[0] == 0 means the end of an LHa archive file. */
 	if (signature[0] == 0)
@@ -1197,7 +1208,7 @@ lha_read_file_extended_header(struct archive_read *a, struct lha *lha,
 			if (extdheader[0] == '\0')
 				goto invalid;
 			archive_strncpy(&lha->filename,
-			    (const char *)extdheader, datasize);
+			    (const char *)(void *)extdheader, datasize);
 			break;
 		case EXT_DIRECTORY:
 			if (datasize == 0 || extdheader[0] == '\0')
@@ -1205,7 +1216,7 @@ lha_read_file_extended_header(struct archive_read *a, struct lha *lha,
 				goto invalid;
 
 			archive_strncpy(&lha->dirname,
-		  	    (const char *)extdheader, datasize);
+		  	    (const char *)(void *)extdheader, datasize);
 			/*
 			 * Convert directory delimiter from 0xFF
 			 * to '/' for local system.
@@ -1290,12 +1301,12 @@ lha_read_file_extended_header(struct archive_read *a, struct lha *lha,
 		case EXT_UNIX_GNAME:
 			if (datasize > 0)
 				archive_strncpy(&lha->gname,
-				    (const char *)extdheader, datasize);
+				    (const char *)(void *)extdheader, datasize);
 			break;
 		case EXT_UNIX_UNAME:
 			if (datasize > 0)
 				archive_strncpy(&lha->uname,
-				    (const char *)extdheader, datasize);
+				    (const char *)(void *)extdheader, datasize);
 			break;
 		case EXT_UNIX_MTIME:
 			if (datasize == sizeof(uint32_t))
@@ -1685,25 +1696,27 @@ lha_crc16_init(void)
 	}
 }
 
+struct u_ {
+        uint32_t i;
+        char c[4];
+};
+        
 static uint16_t
 lha_crc16(uint16_t crc, const void *pp, size_t len)
 {
 	const unsigned char *p = (const unsigned char *)pp;
 	const uint16_t *buff;
-	const union {
-		uint32_t i;
-		char c[4];
-	} u = { 0x01020304 };
+	const struct u_ u = { 0x01020304, {' ', ' ', ' ', ' '} };
 
 	if (len == 0)
 		return crc;
 
 	/* Process unaligned address. */
-	if (((uintptr_t)p) & (uintptr_t)0x1) {
+	if ((uintptr_t)(p) & (uintptr_t)0x1) {
 		crc = (crc >> 8) ^ crc16tbl[0][(crc ^ *p++) & 0xff];
 		len--;
 	}
-	buff = (const uint16_t *)p;
+	buff = (const uint16_t *)(void *)p;
 	/*
 	 * Modern C compiler such as GCC does not unroll automatically yet
 	 * without unrolling pragma, and Clang is so. So we should
@@ -1715,10 +1728,10 @@ lha_crc16(uint16_t crc, const void *pp, size_t len)
 #undef bswap16
 #if defined(_MSC_VER) && _MSC_VER >= 1400  /* Visual Studio */
 #  define bswap16(x) _byteswap_ushort(x)
-#elif defined(__GNUC__) && ((__GNUC__ == 4 && __GNUC_MINOR__ >= 8) || __GNUC__ > 4)
+#elif 0 //defined(__GNUC__) && ((__GNUC__ == 4 && __GNUC_MINOR__ >= 8) || __GNUC__ > 4)
 /* GCC 4.8 and later has __builtin_bswap16() */
 #  define bswap16(x) __builtin_bswap16(x)
-#elif defined(__clang__)
+#elif 0 //defined(__clang__)
 /* All clang versions have __builtin_bswap16() */
 #  define bswap16(x) __builtin_bswap16(x)
 #else
@@ -1739,7 +1752,7 @@ lha_crc16(uint16_t crc, const void *pp, size_t len)
 #undef bswap16
 	}
 
-	p = (const unsigned char *)buff;
+	p = (const unsigned char *)(void *)buff;
 	for (;len; len--) {
 		crc = (crc >> 8) ^ crc16tbl[0][(crc ^ *p++) & 0xff];
 	}
@@ -2474,72 +2487,6 @@ lzh_huffman_free(struct huffman *hf)
 	free(hf->tree);
 }
 
-static char bitlen_tbl[0x400] = {
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	 9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
-	10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-	10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-	10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-	10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-	11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-	11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-	12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
-	13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 16,  0
-};
 static int
 lzh_read_pt_bitlen(struct lzh_stream *strm, int start, int end)
 {
@@ -2598,7 +2545,8 @@ lzh_make_huffman_table(struct huffman *hf)
 {
 	uint16_t *tbl;
 	const unsigned char *bitlen;
-	int bitptn[17], weight[17];
+	int bitptn[17];
+        int weight[17];
 	int i, maxbits = 0, ptn, tbl_size, w;
 	int diffbits, len_avail;
 

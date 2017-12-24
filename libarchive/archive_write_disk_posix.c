@@ -135,6 +135,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_write_disk_private.h"
+#include "archive_entry_private.h"
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -152,25 +153,6 @@ __FBSDID("$FreeBSD$");
 #ifndef O_NOFOLLOW
 #define O_NOFOLLOW 0
 #endif
-
-struct fixup_entry {
-	struct fixup_entry	*next;
-	struct archive_acl	 acl;
-	mode_t			 mode;
-	int64_t			 atime;
-	int64_t                  birthtime;
-	int64_t			 mtime;
-	int64_t			 ctime;
-	unsigned long		 atime_nanos;
-	unsigned long            birthtime_nanos;
-	unsigned long		 mtime_nanos;
-	unsigned long		 ctime_nanos;
-	unsigned long		 fflags_set;
-	size_t			 mac_metadata_size;
-	void			*mac_metadata;
-	int			 fixup; /* bitmask of what needs fixing */
-	char			*name;
-};
 
 /*
  * We use a bitmask to track which operations remain to be done for
@@ -200,97 +182,6 @@ struct fixup_entry {
 #define	TODO_XATTR		ARCHIVE_EXTRACT_XATTR
 #define	TODO_MAC_METADATA	ARCHIVE_EXTRACT_MAC_METADATA
 #define	TODO_HFS_COMPRESSION	ARCHIVE_EXTRACT_HFS_COMPRESSION_FORCED
-
-struct archive_write_disk {
-	struct archive	archive;
-
-	mode_t			 user_umask;
-	struct fixup_entry	*fixup_list;
-	struct fixup_entry	*current_fixup;
-	int64_t			 user_uid;
-	int			 skip_file_set;
-	int64_t			 skip_file_dev;
-	int64_t			 skip_file_ino;
-	time_t			 start_time;
-
-	int64_t (*lookup_gid)(void *private, const char *gname, int64_t gid);
-	void  (*cleanup_gid)(void *private);
-	void			*lookup_gid_data;
-	int64_t (*lookup_uid)(void *private, const char *uname, int64_t uid);
-	void  (*cleanup_uid)(void *private);
-	void			*lookup_uid_data;
-
-	/*
-	 * Full path of last file to satisfy symlink checks.
-	 */
-	struct archive_string	path_safe;
-
-	/*
-	 * Cached stat data from disk for the current entry.
-	 * If this is valid, pst points to st.  Otherwise,
-	 * pst is null.
-	 */
-	struct stat		 st;
-	struct stat		*pst;
-
-	/* Information about the object being restored right now. */
-	struct archive_entry	*entry; /* Entry being extracted. */
-	char			*name; /* Name of entry, possibly edited. */
-	struct archive_string	 _name_data; /* backing store for 'name' */
-	/* Tasks remaining for this object. */
-	int			 todo;
-	/* Tasks deferred until end-of-archive. */
-	int			 deferred;
-	/* Options requested by the client. */
-	int			 flags;
-	/* Handle for the file we're restoring. */
-	int			 fd;
-	/* Current offset for writing data to the file. */
-	int64_t			 offset;
-	/* Last offset actually written to disk. */
-	int64_t			 fd_offset;
-	/* Total bytes actually written to files. */
-	int64_t			 total_bytes_written;
-	/* Maximum size of file, -1 if unknown. */
-	int64_t			 filesize;
-	/* Dir we were in before this restore; only for deep paths. */
-	int			 restore_pwd;
-	/* Mode we should use for this entry; affected by _PERM and umask. */
-	mode_t			 mode;
-	/* UID/GID to use in restoring this entry. */
-	int64_t			 uid;
-	int64_t			 gid;
-	/*
-	 * HFS+ Compression.
-	 */
-	/* Xattr "com.apple.decmpfs". */
-	uint32_t		 decmpfs_attr_size;
-	unsigned char		*decmpfs_header_p;
-	/* ResourceFork set options used for fsetxattr. */
-	int			 rsrc_xattr_options;
-	/* Xattr "com.apple.ResourceFork". */
-	unsigned char		*resource_fork;
-	size_t			 resource_fork_allocated_size;
-	unsigned int		 decmpfs_block_count;
-	uint32_t		*decmpfs_block_info;
-	/* Buffer for compressed data. */
-	unsigned char		*compressed_buffer;
-	size_t			 compressed_buffer_size;
-	size_t			 compressed_buffer_remaining;
-	/* The offset of the ResourceFork where compressed data will
-	 * be placed. */
-	uint32_t		 compressed_rsrc_position;
-	uint32_t		 compressed_rsrc_position_v;
-	/* Buffer for uncompressed data. */
-	char			*uncompressed_buffer;
-	size_t			 block_remaining_bytes;
-	size_t			 file_remaining_bytes;
-#ifdef HAVE_ZLIB_H
-	z_stream		 stream;
-	int			 stream_valid;
-	int			 decmpfs_compression_level;
-#endif
-};
 
 /*
  * Default mode for dirs created automatically (will be modified by umask).
@@ -428,7 +319,7 @@ archive_write_disk_vtable(void)
 static int64_t
 _archive_write_disk_filter_bytes(struct archive *_a, int n)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	(void)n; /* UNUSED */
 	if (n == -1 || n == 0)
 		return (a->total_bytes_written);
@@ -439,7 +330,7 @@ _archive_write_disk_filter_bytes(struct archive *_a, int n)
 int
 archive_write_disk_set_options(struct archive *_a, int flags)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 
 	a->flags = flags;
 	return (ARCHIVE_OK);
@@ -460,7 +351,7 @@ archive_write_disk_set_options(struct archive *_a, int flags)
 static int
 _archive_write_disk_header(struct archive *_a, struct archive_entry *entry)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	struct fixup_entry *fe;
 	int ret, r;
 
@@ -756,7 +647,7 @@ _archive_write_disk_header(struct archive *_a, struct archive_entry *entry)
 int
 archive_write_disk_set_skip_file(struct archive *_a, int64_t d, int64_t i)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_disk_set_skip_file");
 	a->skip_file_set = 1;
@@ -1141,7 +1032,7 @@ hfs_drive_compressor(struct archive_write_disk *a, const char *buff,
 
 	buffer_compressed = a->compressed_buffer +
 	    a->compressed_buffer_size - a->compressed_buffer_remaining;
-	a->stream.next_in = (Bytef *)(uintptr_t)(const void *)buff;
+	a->stream.next_in = (Bytef *)(const void *)buff;
 	a->stream.avail_in = size;
 	a->stream.next_out = buffer_compressed;
 	a->stream.avail_out = a->compressed_buffer_remaining;
@@ -1465,7 +1356,7 @@ static ssize_t
 _archive_write_disk_data_block(struct archive *_a,
     const void *buff, size_t size, int64_t offset)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	ssize_t r;
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
@@ -1493,7 +1384,7 @@ _archive_write_disk_data_block(struct archive *_a,
 static ssize_t
 _archive_write_disk_data(struct archive *_a, const void *buff, size_t size)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
 	    ARCHIVE_STATE_DATA, "archive_write_data");
@@ -1506,7 +1397,7 @@ _archive_write_disk_data(struct archive *_a, const void *buff, size_t size)
 static int
 _archive_write_disk_finish_entry(struct archive *_a)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	int ret = ARCHIVE_OK;
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
@@ -1705,11 +1596,11 @@ archive_write_disk_set_group_lookup(struct archive *_a,
     int64_t (*lookup_gid)(void *private, const char *gname, int64_t gid),
     void (*cleanup_gid)(void *private))
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_disk_set_group_lookup");
 
-	if (a->cleanup_gid != NULL && a->lookup_gid_data != NULL)
+	if (a->cleanup_gid != 0 && a->lookup_gid_data != NULL)
 		(a->cleanup_gid)(a->lookup_gid_data);
 
 	a->lookup_gid = lookup_gid;
@@ -1724,11 +1615,11 @@ archive_write_disk_set_user_lookup(struct archive *_a,
     int64_t (*lookup_uid)(void *private, const char *uname, int64_t uid),
     void (*cleanup_uid)(void *private))
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_disk_set_user_lookup");
 
-	if (a->cleanup_uid != NULL && a->lookup_uid_data != NULL)
+	if (a->cleanup_uid != 0 && a->lookup_uid_data != NULL)
 		(a->cleanup_uid)(a->lookup_uid_data);
 
 	a->lookup_uid = lookup_uid;
@@ -1740,7 +1631,7 @@ archive_write_disk_set_user_lookup(struct archive *_a,
 int64_t
 archive_write_disk_gid(struct archive *_a, const char *name, int64_t id)
 {
-       struct archive_write_disk *a = (struct archive_write_disk *)_a;
+       struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
        archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
            ARCHIVE_STATE_ANY, "archive_write_disk_gid");
        if (a->lookup_gid)
@@ -1751,7 +1642,7 @@ archive_write_disk_gid(struct archive *_a, const char *name, int64_t id)
 int64_t
 archive_write_disk_uid(struct archive *_a, const char *name, int64_t id)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_disk_uid");
 	if (a->lookup_uid)
@@ -1762,7 +1653,7 @@ archive_write_disk_uid(struct archive *_a, const char *name, int64_t id)
 /*
  * Create a new archive_write_disk object and initialize it with global state.
  */
-struct archive *
+struct archive_write_disk *
 archive_write_disk_new(void)
 {
 	struct archive_write_disk *a;
@@ -1775,7 +1666,7 @@ archive_write_disk_new(void)
 	/* We're ready to write a header immediately. */
 	a->archive.state = ARCHIVE_STATE_HEADER;
 	a->archive.vtable = archive_write_disk_vtable();
-	a->start_time = time(NULL);
+	a->start_time = time((time_t *)NULL);
 	/* Query and restore the umask. */
 	umask(a->user_umask = umask(0));
 #ifdef HAVE_GETEUID
@@ -1788,7 +1679,7 @@ archive_write_disk_new(void)
 #ifdef HAVE_ZLIB_H
 	a->decmpfs_compression_level = 5;
 #endif
-	return (&a->archive);
+	return a;
 }
 
 
@@ -2203,7 +2094,7 @@ create_filesystem_object(struct archive_write_disk *a)
 static int
 _archive_write_disk_close(struct archive *_a)
 {
-	struct archive_write_disk *a = (struct archive_write_disk *)_a;
+	struct archive_write_disk *a = _containerof(_a, struct archive_write_disk, archive);
 	struct fixup_entry *next, *p;
 	int ret;
 
@@ -2255,10 +2146,10 @@ _archive_write_disk_free(struct archive *_a)
 		return (ARCHIVE_OK);
 	archive_check_magic(_a, ARCHIVE_WRITE_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY | ARCHIVE_STATE_FATAL, "archive_write_disk_free");
-	a = (struct archive_write_disk *)_a;
+	a = _containerof(_a, struct archive_write_disk, archive);
 	ret = _archive_write_disk_close(&a->archive);
-	archive_write_disk_set_group_lookup(&a->archive, NULL, NULL, NULL);
-	archive_write_disk_set_user_lookup(&a->archive, NULL, NULL, NULL);
+	archive_write_disk_set_group_lookup(&a->archive, NULL, 0, 0);
+	archive_write_disk_set_user_lookup(&a->archive, NULL, 0, 0);
 	if (a->entry)
 		archive_entry_free(a->entry);
 	archive_string_free(&a->_name_data);

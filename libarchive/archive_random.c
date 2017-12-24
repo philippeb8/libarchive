@@ -189,15 +189,17 @@ arc4_addrandom(u_char *dat, int datlen)
 	rs.j = rs.i;
 }
 
+struct rdat_ {
+        struct timeval	tv;
+        pid_t		pid;
+        u_char	 	rnd[KEYSIZE];
+};
+
 static void
 arc4_stir(void)
 {
 	int done, fd, i;
-	struct {
-		struct timeval	tv;
-		pid_t		pid;
-		u_char	 	rnd[KEYSIZE];
-	} rdat;
+	struct rdat_ rdat;
 
 	if (!rs_initialized) {
 		arc4_init();
@@ -211,12 +213,12 @@ arc4_stir(void)
 		(void)close(fd);
 	}
 	if (!done) {
-		(void)gettimeofday(&rdat.tv, NULL);
+		(void)gettimeofday(&rdat.tv, 0);
 		rdat.pid = getpid();
 		/* We'll just take whatever was on the stack too... */
 	}
 
-	arc4_addrandom((u_char *)&rdat, KEYSIZE);
+	arc4_addrandom((u_char *)(void *)&rdat, KEYSIZE);
 
 	/*
 	 * Discard early keystream, as per recommendations in:

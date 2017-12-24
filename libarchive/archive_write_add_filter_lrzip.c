@@ -41,10 +41,12 @@ __FBSDID("$FreeBSD$");
 #include "archive_string.h"
 #include "archive_write_private.h"
 
+enum compression_ { lzma = 0, bzip2, gzip, lzo, none, zpaq };
+
 struct write_lrzip {
 	struct archive_write_program_data *pdata;
 	int	compression_level;
-	enum { lzma = 0, bzip2, gzip, lzo, none, zpaq } compression;
+	enum compression_ compression;
 };
 
 static int archive_write_lrzip_open(struct archive_write_filter *);

@@ -63,10 +63,25 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_zip.c 201102
 #include "archive_private.h"
 #include "archive_rb.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #ifndef HAVE_ZLIB_H
 #include "archive_crc32.h"
 #endif
+
+/* WinZip AES encryption extra field should be available
+    * when compression is 99. */
+struct aes_extra_ {
+        /* Vendor version: AE-1 - 0x0001, AE-2 - 0x0002 */
+        unsigned	vendor;
+#define AES_VENDOR_AE_1	0x0001
+#define AES_VENDOR_AE_2	0x0002
+        /* AES encryption strength:
+            * 1 - 128 bits, 2 - 192 bits, 2 - 256 bits. */
+        unsigned	strength;
+        /* Actual compression method. */
+        unsigned char	compression;
+};
 
 struct zip_entry {
 	struct archive_rb_node	node;
@@ -90,17 +105,7 @@ struct zip_entry {
 
 	/* WinZip AES encryption extra field should be available
 	 * when compression is 99. */
-	struct {
-		/* Vendor version: AE-1 - 0x0001, AE-2 - 0x0002 */
-		unsigned	vendor;
-#define AES_VENDOR_AE_1	0x0001
-#define AES_VENDOR_AE_2	0x0002
-		/* AES encryption strength:
-		 * 1 - 128 bits, 2 - 192 bits, 2 - 256 bits. */
-		unsigned	strength;
-		/* Actual compression method. */
-		unsigned char	compression;
-	}			aes_extra;
+	struct aes_extra_       aes_extra;
 };
 
 struct trad_enc_ctx {
@@ -347,7 +352,7 @@ fake_crc32(unsigned long crc, const void *buff, size_t len)
 	return 0;
 }
 
-static struct {
+static struct compression_methods_ {
 	int id;
 	const char * name;
 } compression_methods[] = {
@@ -1219,18 +1224,18 @@ zip_read_data_none(struct archive_read *a, const void **_buff,
 			dec_size = zip->decrypted_buffer_size;
 		if (zip->tctx_valid) {
 			trad_enc_decrypt_update(&zip->tctx,
-			    (const uint8_t *)buff, dec_size,
+			    (const uint8_t *)(void *)buff, dec_size,
 			    zip->decrypted_buffer, dec_size);
 		} else {
 			size_t dsize = dec_size;
 			archive_hmac_sha1_update(&zip->hctx,
-			    (const uint8_t *)buff, dec_size);
+			    (const uint8_t *)(void *)buff, dec_size);
 			archive_decrypto_aes_ctr_update(&zip->cctx,
-			    (const uint8_t *)buff, dec_size,
+			    (const uint8_t *)(void *)buff, dec_size,
 			    zip->decrypted_buffer, &dsize);
 		}
 		bytes_avail = dec_size;
-		buff = (const char *)zip->decrypted_buffer;
+		buff = (const char *)(void *)zip->decrypted_buffer;
 	}
 	*size = bytes_avail;
 	zip->entry_bytes_remaining -= bytes_avail;
@@ -1365,7 +1370,7 @@ zip_read_data_deflate(struct archive_read *a, const void **buff,
 	 * next_in pointer, only reads it).  The result: this ugly
 	 * cast to remove 'const'.
 	 */
-	zip->stream.next_in = (Bytef *)(uintptr_t)(const void *)compressed_buff;
+	zip->stream.next_in = (Bytef *)(const void *)compressed_buff;
 	zip->stream.avail_in = (uInt)bytes_avail;
 	zip->stream.total_in = 0;
 	zip->stream.next_out = zip->uncompressed_buffer;
@@ -1965,7 +1970,7 @@ archive_read_format_zip_cleanup(struct archive_read *a)
 }
 
 static int
-archive_read_format_zip_has_encrypted_entries(struct archive_read *_a)
+archive_read_format_zip_has_encrypted_entries(struct archive_read * _a)
 {
 	if (_a && _a->format) {
 		struct zip * zip = (struct zip *)_a->format->data;
@@ -2275,7 +2280,7 @@ archive_read_format_zip_read_data_skip_streamable(struct archive_read *a)
 int
 archive_read_support_format_zip_streamable(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct zip *zip;
 	int r;
 
@@ -2307,7 +2312,7 @@ archive_read_support_format_zip_streamable(struct archive *_a)
 	    archive_read_format_zip_streamable_read_header,
 	    archive_read_format_zip_read_data,
 	    archive_read_format_zip_read_data_skip_streamable,
-	    NULL,
+	    0,
 	    archive_read_format_zip_cleanup,
 	    archive_read_support_format_zip_capabilities_streamable,
 	    archive_read_format_zip_has_encrypted_entries);
@@ -2476,8 +2481,8 @@ archive_read_format_zip_seekable_bid(struct archive_read *a, int best_bid)
 static int
 cmp_node(const struct archive_rb_node *n1, const struct archive_rb_node *n2)
 {
-	const struct zip_entry *e1 = (const struct zip_entry *)n1;
-	const struct zip_entry *e2 = (const struct zip_entry *)n2;
+	const struct zip_entry *e1 = _containerof(n1, const struct zip_entry, node);
+	const struct zip_entry *e2 = _containerof(n2, const struct zip_entry, node);
 
 	if (e1->local_header_offset > e2->local_header_offset)
 		return -1;
@@ -2503,8 +2508,8 @@ static int
 rsrc_cmp_node(const struct archive_rb_node *n1,
     const struct archive_rb_node *n2)
 {
-	const struct zip_entry *e1 = (const struct zip_entry *)n1;
-	const struct zip_entry *e2 = (const struct zip_entry *)n2;
+	const struct zip_entry *e1 = _containerof(n1, const struct zip_entry, node);
+	const struct zip_entry *e2 = _containerof(n2, const struct zip_entry, node);
 
 	return (strcmp(e2->rsrcname.s, e1->rsrcname.s));
 }
@@ -2512,7 +2517,7 @@ rsrc_cmp_node(const struct archive_rb_node *n1,
 static int
 rsrc_cmp_key(const struct archive_rb_node *n, const void *key)
 {
-	const struct zip_entry *e = (const struct zip_entry *)n;
+	const struct zip_entry *e = _containerof(n, const struct zip_entry, node);
 	return (strcmp((const char *)key, e->rsrcname.s));
 }
 
@@ -2551,8 +2556,7 @@ expose_parent_dirs(struct zip *zip, const char *name, size_t name_length)
 		*s = '\0';
 		/* Transfer the parent directory from zip->tree_rsrc RB
 		 * tree to zip->tree RB tree to expose. */
-		dir = (struct zip_entry *)
-		    __archive_rb_tree_find_node(&zip->tree_rsrc, str.s);
+		dir = _containerof(__archive_rb_tree_find_node(&zip->tree_rsrc, str.s), struct zip_entry, node);
 		if (dir == NULL)
 			break;
 		__archive_rb_tree_remove_node(&zip->tree_rsrc, &dir->node);
@@ -2890,7 +2894,7 @@ zip_read_mac_metadata(struct archive_read *a, struct archive_entry *entry,
 			if (ret != ARCHIVE_OK)
 				goto exit_mac_metadata;
 			zip->stream.next_in =
-			    (Bytef *)(uintptr_t)(const void *)p;
+			    (Bytef *)(const void *)p;
 			zip->stream.avail_in = (uInt)bytes_avail;
 			zip->stream.total_in = 0;
 			zip->stream.next_out = mp;
@@ -2970,19 +2974,19 @@ archive_read_format_zip_seekable_read_header(struct archive_read *a,
 		/* Get first entry whose local header offset is lower than
 		 * other entries in the archive file. */
 		zip->entry =
-		    (struct zip_entry *)ARCHIVE_RB_TREE_MIN(&zip->tree);
+		    _containerof(ARCHIVE_RB_TREE_MIN(&zip->tree), struct zip_entry, node);
 	} else if (zip->entry != NULL) {
 		/* Get next entry in local header offset order. */
-		zip->entry = (struct zip_entry *)__archive_rb_tree_iterate(
-		    &zip->tree, &zip->entry->node, ARCHIVE_RB_DIR_RIGHT);
+		zip->entry = _containerof(__archive_rb_tree_iterate(
+		    &zip->tree, &zip->entry->node, ARCHIVE_RB_DIR_RIGHT), struct zip_entry, node);
 	}
 
 	if (zip->entry == NULL)
 		return ARCHIVE_EOF;
 
 	if (zip->entry->rsrcname.s)
-		rsrc = (struct zip_entry *)__archive_rb_tree_find_node(
-		    &zip->tree_rsrc, zip->entry->rsrcname.s);
+		rsrc = _containerof(__archive_rb_tree_find_node(
+		    &zip->tree_rsrc, zip->entry->rsrcname.s), struct zip_entry, node);
 	else
 		rsrc = NULL;
 
@@ -3033,7 +3037,7 @@ archive_read_format_zip_read_data_skip_seekable(struct archive_read *a)
 int
 archive_read_support_format_zip_seekable(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct zip *zip;
 	int r;
 
@@ -3067,7 +3071,7 @@ archive_read_support_format_zip_seekable(struct archive *_a)
 	    archive_read_format_zip_seekable_read_header,
 	    archive_read_format_zip_read_data,
 	    archive_read_format_zip_read_data_skip_seekable,
-	    NULL,
+	    0,
 	    archive_read_format_zip_cleanup,
 	    archive_read_support_format_zip_capabilities_seekable,
 	    archive_read_format_zip_has_encrypted_entries);

@@ -42,6 +42,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_set_format_shar.c 189438 2
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 struct shar {
 	int			 dump;
@@ -103,14 +104,14 @@ shar_quote(struct archive_string *buf, const char *str, int in_shell)
 int
 archive_write_set_format_shar(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct shar *shar;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_shar");
 
 	/* If someone else was already registered, unregister them. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	shar = (struct shar *)malloc(sizeof(*shar));
@@ -142,7 +143,7 @@ archive_write_set_format_shar(struct archive *_a)
 int
 archive_write_set_format_shar_dump(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct shar *shar;
 
 	archive_write_set_format_shar(&a->archive);
@@ -397,9 +398,9 @@ archive_write_shar_data_sed(struct archive_write *a, const void *buff, size_t n)
 #define	UUENC(c)	(((c)!=0) ? ((c) & 077) + ' ': '`')
 
 static void
-uuencode_group(const char _in[3], char out[4])
+uuencode_group(const char * _in, char * out)
 {
-	const unsigned char *in = (const unsigned char *)_in;
+	const unsigned char *in = (const unsigned char *)(void *)_in;
 	int t;
 
 	t = (in[0] << 16) | (in[1] << 8) | in[2];

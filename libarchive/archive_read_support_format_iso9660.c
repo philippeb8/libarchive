@@ -51,6 +51,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_iso9660.c 20
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_string.h"
+#include "archive_entry_private.h"
 
 /*
  * An overview of ISO 9660 format:
@@ -257,6 +258,18 @@ struct content {
 	struct content	*next;
 };
 
+struct contents_ {
+        struct content	*first;
+        struct content	**last;
+};
+
+struct file_info;
+
+struct rede_files_ {
+        struct file_info	*first;
+        struct file_info	**last;
+};
+
 /* In-memory storage for a directory record. */
 struct file_info {
 	struct file_info	*use_next;
@@ -297,20 +310,39 @@ struct file_info {
 	uint64_t	 pz_uncompressed_size;
 	/* Set 1 if this file is multi extent. */
 	int		 multi_extent;
-	struct {
-		struct content	*first;
-		struct content	**last;
-	} contents;
-	struct {
-		struct file_info	*first;
-		struct file_info	**last;
-	} rede_files;
+	struct contents_ contents;
+	struct rede_files_ rede_files;
 };
 
 struct heap_queue {
 	struct file_info **files;
 	int		 allocated;
 	int		 used;
+};
+
+struct read_ce_req {
+        uint64_t	 offset;/* Offset of CE on disk. */
+        struct file_info *file;
+};
+
+struct read_ce_queue {
+        struct read_ce_req *reqs;
+        int		 cnt;
+        int		 allocated;
+};
+
+struct cache_files_ {
+        struct file_info	*first;
+        struct file_info	**last;
+};
+struct re_files_ {
+        struct file_info	*first;
+        struct file_info	**last;
+};
+
+struct vd {
+        int		location;	/* Location of Extent.	*/
+        uint32_t	size;
 };
 
 struct iso9660 {
@@ -327,38 +359,22 @@ struct iso9660 {
 
 	unsigned char	suspOffset;
 	struct file_info *rr_moved;
-	struct read_ce_queue {
-		struct read_ce_req {
-			uint64_t	 offset;/* Offset of CE on disk. */
-			struct file_info *file;
-		}		*reqs;
-		int		 cnt;
-		int		 allocated;
-	}	read_ce_req;
+	struct read_ce_queue read_ce_req;
 
 	int64_t		previous_number;
 	struct archive_string previous_pathname;
 
 	struct file_info		*use_files;
 	struct heap_queue		 pending_files;
-	struct {
-		struct file_info	*first;
-		struct file_info	**last;
-	}	cache_files;
-	struct {
-		struct file_info	*first;
-		struct file_info	**last;
-	}	re_files;
+	struct cache_files_              cache_files;
+	struct re_files_                 re_files;
 
 	uint64_t current_position;
 	ssize_t	logical_block_size;
 	uint64_t volume_size; /* Total size of volume in bytes. */
 	int32_t  volume_block;/* Total size of volume in logical blocks. */
 
-	struct vd {
-		int		location;	/* Location of Extent.	*/
-		uint32_t	size;
-	} primary, joliet;
+	struct vd                        primary, joliet;
 
 	int64_t	entry_sparse_offset;
 	int64_t	entry_bytes_remaining;
@@ -446,7 +462,7 @@ static struct file_info *heap_get_entry(struct heap_queue *heap);
 int
 archive_read_support_format_iso9660(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct iso9660 *iso9660;
 	int r;
 
@@ -477,10 +493,10 @@ archive_read_support_format_iso9660(struct archive *_a)
 	    archive_read_format_iso9660_read_header,
 	    archive_read_format_iso9660_read_data,
 	    archive_read_format_iso9660_read_data_skip,
-	    NULL,
+	    0,
 	    archive_read_format_iso9660_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 
 	if (r != ARCHIVE_OK) {
 		free(iso9660);
@@ -1229,7 +1245,7 @@ archive_read_format_iso9660_read_header(struct archive_read *a,
 		}
 
 		r = archive_entry_copy_pathname_l(entry,
-		    (const char *)iso9660->utf16be_path,
+		    (const char *)(void *)iso9660->utf16be_path,
 		    iso9660->utf16be_path_len,
 		    iso9660->sconv_utf16be);
 		if (r != 0) {
@@ -1298,7 +1314,7 @@ archive_read_format_iso9660_read_header(struct archive_read *a,
 	    file->number == iso9660->previous_number) {
 		if (iso9660->seenJoliet) {
 			r = archive_entry_copy_hardlink_l(entry,
-			    (const char *)iso9660->utf16be_previous_path,
+			    (const char *)(void *)iso9660->utf16be_previous_path,
 			    iso9660->utf16be_previous_path_len,
 			    iso9660->sconv_utf16be);
 			if (r != 0) {
@@ -1589,7 +1605,7 @@ zisofs_read_data(struct archive_read *a,
 		    zisofs->uncompressed_buffer_size);
 		uncompressed_size = zisofs->uncompressed_buffer_size;
 	} else {
-		zisofs->stream.next_in = (Bytef *)(uintptr_t)(const void *)p;
+		zisofs->stream.next_in = (Bytef *)(const void *)p;
 		if (avail > zisofs->block_avail)
 			zisofs->stream.avail_in = zisofs->block_avail;
 		else
@@ -1877,7 +1893,7 @@ parse_file_info(struct archive_read *a, struct file_info *parent,
 		if (name_len > 1 && p[name_len - 1] == '.')
 			--name_len;
 
-		archive_strncpy(&file->name, (const char *)p, name_len);
+		archive_strncpy(&file->name, (const char *)(void *)p, name_len);
 	}
 
 	flags = isodirrec[DR_flags_offset];
@@ -2440,13 +2456,13 @@ parse_rockridge_NM1(struct file_info *file,
 		if (data_length < 2)
 			return;
 		archive_strncat(&file->name,
-		    (const char *)data + 1, data_length - 1);
+		    (const char *)(void *)data + 1, data_length - 1);
 		break;
 	case 1:
 		if (data_length < 2)
 			return;
 		archive_strncat(&file->name,
-		    (const char *)data + 1, data_length - 1);
+		    (const char *)(void *)data + 1, data_length - 1);
 		file->name_continues = 1;
 		break;
 	case 2:
@@ -2586,13 +2602,13 @@ parse_rockridge_SL1(struct file_info *file, const unsigned char *data,
 			if (data_length < nlen)
 				return;
 			archive_strncat(&file->symlink,
-			    (const char *)data, nlen);
+			    (const char *)(void *)data, nlen);
 			break;
 		case 0x01: /* Text continues in next component. */
 			if (data_length < nlen)
 				return;
 			archive_strncat(&file->symlink,
-			    (const char *)data, nlen);
+			    (const char *)(void *)data, nlen);
 			separator = "";
 			break;
 		case 0x02: /* Current dir. */
@@ -2704,15 +2720,17 @@ next_entry_seek(struct archive_read *a, struct iso9660 *iso9660,
 	return (ARCHIVE_OK);
 }
 
+struct empty_files_ {
+        struct file_info	*first;
+        struct file_info	**last;
+};
+
 static int
 next_cache_entry(struct archive_read *a, struct iso9660 *iso9660,
     struct file_info **pfile)
 {
 	struct file_info *file;
-	struct {
-		struct file_info	*first;
-		struct file_info	**last;
-	}	empty_files;
+	struct empty_files_ empty_files;
 	int64_t number;
 	int count;
 
@@ -3122,7 +3140,7 @@ isodate7(const unsigned char *v)
 	tm.tm_min = v[4];
 	tm.tm_sec = v[5];
 	/* v[6] is the signed timezone offset, in 1/4-hour increments. */
-	offset = ((const signed char *)v)[6];
+	offset = ((const signed char *)(void *)v)[6];
 	if (offset > -48 && offset < 52) {
 		tm.tm_hour -= offset / 4;
 		tm.tm_min -= (offset % 4) * 15;
@@ -3150,7 +3168,7 @@ isodate17(const unsigned char *v)
 	tm.tm_min = (v[10] - '0') * 10 + (v[11] - '0');
 	tm.tm_sec = (v[12] - '0') * 10 + (v[13] - '0');
 	/* v[16] is the signed timezone offset, in 1/4-hour increments. */
-	offset = ((const signed char *)v)[16];
+	offset = ((const signed char *)(void *)v)[16];
 	if (offset > -48 && offset < 52) {
 		tm.tm_hour -= offset / 4;
 		tm.tm_min -= (offset % 4) * 15;

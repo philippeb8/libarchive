@@ -40,6 +40,7 @@ __FBSDID("$FreeBSD: src/lib/libarchive/archive_read_extract.c,v 1.61 2008/05/26 
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 static int	copy_data(struct archive *ar, struct archive *aw);
 static int	archive_read_extract_cleanup(struct archive_read *);
@@ -48,11 +49,11 @@ static int	archive_read_extract_cleanup(struct archive_read *);
 /* Retrieve an extract object without initialising the associated
  * archive_write_disk object.
  */
-struct archive_read_extract *
+struct archive_read_extract_ *
 __archive_read_get_extract(struct archive_read *a)
 {
 	if (a->extract == NULL) {
-		a->extract = (struct archive_read_extract *)malloc(sizeof(*a->extract));
+		a->extract = (struct archive_read_extract_ *)malloc(sizeof(*a->extract));
 		if (a->extract == NULL) {
 			archive_set_error(&a->archive, ENOMEM, "Can't extract");
 			return (NULL);
@@ -83,7 +84,7 @@ int
 archive_read_extract2(struct archive *_a, struct archive_entry *entry,
     struct archive *ad)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	int r, r2;
 
 	/* Set up for this particular entry. */
@@ -115,8 +116,8 @@ void
 archive_read_extract_set_progress_callback(struct archive *_a,
     void (*progress_func)(void *), void *user_data)
 {
-	struct archive_read *a = (struct archive_read *)_a;
-	struct archive_read_extract *extract = __archive_read_get_extract(a);
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
+	struct archive_read_extract_ *extract = __archive_read_get_extract(a);
 	if (extract != NULL) {
 		extract->extract_progress = progress_func;
 		extract->extract_progress_user_data = user_data;
@@ -128,11 +129,11 @@ copy_data(struct archive *ar, struct archive *aw)
 {
 	int64_t offset;
 	const void *buff;
-	struct archive_read_extract *extract;
+	struct archive_read_extract_ *extract;
 	size_t size;
 	int r;
 
-	extract = __archive_read_get_extract((struct archive_read *)ar);
+	extract = __archive_read_get_extract(_containerof(ar, struct archive_read, archive));
 	if (extract == NULL)
 		return (ARCHIVE_FATAL);
 	for (;;) {

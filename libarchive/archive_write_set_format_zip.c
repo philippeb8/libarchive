@@ -57,6 +57,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_set_format_zip.c 201168 20
 #include "archive_private.h"
 #include "archive_random_private.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 #ifndef HAVE_ZLIB_H
 #include "archive_crc32.h"
@@ -397,7 +398,7 @@ archive_write_zip_options(struct archive_write *a, const char *key,
 int
 archive_write_zip_set_compression_deflate(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int ret = ARCHIVE_FAILED;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
@@ -425,7 +426,7 @@ archive_write_zip_set_compression_deflate(struct archive *_a)
 int
 archive_write_zip_set_compression_store(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct zip *zip = a->format_data;
 	int ret = ARCHIVE_FAILED;
 
@@ -447,14 +448,14 @@ archive_write_zip_set_compression_store(struct archive *_a)
 int
 archive_write_set_format_zip(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct zip *zip;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_zip");
 
 	/* If another format was already registered, unregister it. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	zip = (struct zip *) calloc(1, sizeof(*zip));
@@ -498,7 +499,7 @@ archive_write_set_format_zip(struct archive *_a)
 static int
 is_all_ascii(const char *p)
 {
-	const unsigned char *pp = (const unsigned char *)p;
+	const unsigned char *pp = (const unsigned char *)(void *)p;
 
 	while (*pp) {
 		if (*pp++ > 127)
@@ -563,7 +564,7 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 	zip->entry_flags = 0;
 	zip->entry_uses_zip64 = 0;
 	zip->entry_crc32 = zip->crc32func(0, NULL, 0);
-	zip->entry_encryption = 0;
+	zip->entry_encryption = (enum encryption)0;
 	if (zip->entry != NULL) {
 		archive_entry_free(zip->entry);
 		zip->entry = NULL;
@@ -670,7 +671,7 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 		zip->entry_compressed_size = slink_size;
 		zip->entry_uncompressed_size = slink_size;
 		zip->entry_crc32 = zip->crc32func(zip->entry_crc32,
-		    (const unsigned char *)slink, slink_size);
+		    (const unsigned char *)(void *)slink, slink_size);
 		zip->entry_compression = COMPRESSION_STORE;
 		version_needed = 20;
 	} else if (type != AE_IFREG) {
@@ -900,8 +901,8 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 
 	/* Copy UT ,ux, and AES-extra into central directory as well. */
 	zip->file_header_extra_offset = zip->central_directory_bytes;
-	cd_extra = cd_alloc(zip, e - local_extra);
-	memcpy(cd_extra, local_extra, e - local_extra);
+	cd_extra = cd_alloc(zip, e - (unsigned char *)local_extra);
+	memcpy(cd_extra, local_extra, e - (unsigned char *)local_extra);
 
 	/*
 	 * Following extra blocks vary between local header and
@@ -952,7 +953,7 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 	}
 
 	/* Update local header with size of extra data and write it all out: */
-	archive_le16enc(local_header + 28, (uint16_t)(e - local_extra));
+	archive_le16enc(local_header + 28, e - (unsigned char *)local_extra);
 
 	ret = __archive_write_output(a, local_header, 30);
 	if (ret != ARCHIVE_OK)
@@ -964,10 +965,10 @@ archive_write_zip_header(struct archive_write *a, struct archive_entry *entry)
 		return (ARCHIVE_FATAL);
 	zip->written_bytes += ret;
 
-	ret = __archive_write_output(a, local_extra, e - local_extra);
+	ret = __archive_write_output(a, local_extra, e - (unsigned char *)local_extra);
 	if (ret != ARCHIVE_OK)
 		return (ARCHIVE_FATAL);
-	zip->written_bytes += e - local_extra;
+	zip->written_bytes += e - (unsigned char *)local_extra;
 
 	/* For symlinks, write the body now. */
 	if (slink != NULL) {
@@ -1079,7 +1080,7 @@ archive_write_zip_data(struct archive_write *a, const void *buff, size_t s)
 		break;
 #if HAVE_ZLIB_H
 	case COMPRESSION_DEFLATE:
-		zip->stream.next_in = (unsigned char*)(uintptr_t)buff;
+		zip->stream.next_in = (unsigned char*)buff;
 		zip->stream.avail_in = (uInt)s;
 		do {
 			ret = deflate(&zip->stream, Z_NO_FLUSH);
@@ -1237,13 +1238,13 @@ archive_write_zip_finish_entry(struct archive_write *a)
 			z += 8;
 		}
 		archive_le16enc(zip64 + 2, (uint16_t)(z - (zip64 + 4)));
-		zd = cd_alloc(zip, z - zip64);
+		zd = cd_alloc(zip, z - (unsigned char *)zip64);
 		if (zd == NULL) {
 			archive_set_error(&a->archive, ENOMEM,
 				"Can't allocate zip data");
 			return (ARCHIVE_FATAL);
 		}
-		memcpy(zd, zip64, z - zip64);
+		memcpy(zd, zip64, z - (unsigned char *)zip64);
 		/* Zip64 means version needs to be set to at least 4.5 */
 		if (archive_le16dec(zip->file_header + 6) < 45)
 			archive_le16enc(zip->file_header + 6, 45);

@@ -76,7 +76,7 @@ struct private_data {
  * of ugly hackery to convert a const * pointer to a non-const pointer.
  */
 #define	SET_NEXT_IN(st,src)					\
-	(st)->stream.next_in = (Bytef *)(uintptr_t)(const void *)(src)
+	(st)->stream.next_in = (Bytef *)(const void *)(src)
 
 static int archive_compressor_gzip_options(struct archive_write_filter *,
 		    const char *, const char *);
@@ -97,7 +97,7 @@ static int drive_compressor(struct archive_write_filter *,
 int
 archive_write_add_filter_gzip(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *f = __archive_write_allocate_filter(_a);
 	struct private_data *data;
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,

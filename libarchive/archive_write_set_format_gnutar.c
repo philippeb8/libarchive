@@ -46,6 +46,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_set_format_gnu_tar.c 19157
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 struct gnutar {
 	uint64_t	entry_bytes_remaining;
@@ -172,7 +173,7 @@ static int	format_octal(int64_t, char *, int);
 int
 archive_write_set_format_gnutar(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct gnutar *gnutar;
 
 	gnutar = (struct gnutar *)calloc(1, sizeof(*gnutar));

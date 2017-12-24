@@ -40,6 +40,9 @@ __FBSDID("$FreeBSD$");
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
+#ifdef HAVE_SYS_TYPES_H
+#include <sys/types.h>
+#endif
 #ifdef HAVE_SYS_STATFS_H
 #include <sys/statfs.h>
 #endif
@@ -98,6 +101,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_disk_private.h"
+#include "archive_entry_private.h"
 
 #ifndef HAVE_FCHDIR
 #error fchdir function required.
@@ -134,55 +138,6 @@ __FBSDID("$FreeBSD$");
  *    3) Arbitrary logical traversals by closing/reopening intermediate fds.
  */
 
-struct restore_time {
-	const char		*name;
-	time_t			 mtime;
-	long			 mtime_nsec;
-	time_t			 atime;
-	long			 atime_nsec;
-	mode_t			 filetype;
-	int			 noatime;
-};
-
-struct tree_entry {
-	int			 depth;
-	struct tree_entry	*next;
-	struct tree_entry	*parent;
-	struct archive_string	 name;
-	size_t			 dirname_length;
-	int64_t			 dev;
-	int64_t			 ino;
-	int			 flags;
-	int			 filesystem_id;
-	/* How to return back to the parent of a symlink. */
-	int			 symlink_parent_fd;
-	/* How to restore time of a directory. */
-	struct restore_time	 restore_time;
-};
-
-struct filesystem {
-	int64_t		dev;
-	int		synthetic;
-	int		remote;
-	int		noatime;
-#if defined(USE_READDIR_R)
-	size_t		name_max;
-#endif
-	long		incr_xfer_size;
-	long		max_xfer_size;
-	long		min_xfer_size;
-	long		xfer_align;
-
-	/*
-	 * Buffer used for reading file contents.
-	 */
-	/* Exactly allocated memory pointer. */
-	unsigned char	*allocation_ptr;
-	/* Pointer adjusted to the filesystem alignment . */
-	unsigned char	*buff;
-	size_t		 buff_size;
-};
-
 /* Definitions for tree_entry.flags bitmap. */
 #define	isDir		1  /* This entry is a regular directory. */
 #define	isDirLink	2  /* This entry is a symbolic link to a directory. */
@@ -190,69 +145,6 @@ struct filesystem {
 #define	needsDescent	8  /* This entry needs to be previsited. */
 #define	needsOpen	16 /* This is a directory that needs to be opened. */
 #define	needsAscent	32 /* This entry needs to be postvisited. */
-
-/*
- * Local data for this package.
- */
-struct tree {
-	struct tree_entry	*stack;
-	struct tree_entry	*current;
-	DIR			*d;
-#define	INVALID_DIR_HANDLE NULL
-	struct dirent		*de;
-#if defined(USE_READDIR_R)
-	struct dirent		*dirent;
-	size_t			 dirent_allocated;
-#endif
-	int			 flags;
-	int			 visit_type;
-	/* Error code from last failed operation. */
-	int			 tree_errno;
-
-	/* Dynamically-sized buffer for holding path */
-	struct archive_string	 path;
-
-	/* Last path element */
-	const char		*basename;
-	/* Leading dir length */
-	size_t			 dirname_length;
-
-	int			 depth;
-	int			 openCount;
-	int			 maxOpenCount;
-	int			 initial_dir_fd;
-	int			 working_dir_fd;
-
-	struct stat		 lst;
-	struct stat		 st;
-	int			 descend;
-	int			 nlink;
-	/* How to restore time of a file. */
-	struct restore_time	 restore_time;
-
-	struct entry_sparse {
-		int64_t		 length;
-		int64_t		 offset;
-	}			*sparse_list, *current_sparse;
-	int			 sparse_count;
-	int			 sparse_list_size;
-
-	char			 initial_symlink_mode;
-	char			 symlink_mode;
-	struct filesystem	*current_filesystem;
-	struct filesystem	*filesystem_table;
-	int			 initial_filesystem_id;
-	int			 current_filesystem_id;
-	int			 max_filesystem_id;
-	int			 allocated_filesytem;
-
-	int			 entry_fd;
-	int			 entry_eof;
-	int64_t			 entry_remaining_bytes;
-	int64_t			 entry_total;
-	unsigned char		*entry_buff;
-	size_t			 entry_buff_size;
-};
 
 /* Definitions for tree.flags bitmap. */
 #define	hasStat		16 /* The st entry is valid. */
@@ -389,11 +281,11 @@ archive_read_disk_vtable(void)
 const char *
 archive_read_disk_gname(struct archive *_a, int64_t gid)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	if (ARCHIVE_OK != __archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 		ARCHIVE_STATE_ANY, "archive_read_disk_gname"))
 		return (NULL);
-	if (a->lookup_gname == NULL)
+	if (a->lookup_gname == 0)
 		return (NULL);
 	return ((*a->lookup_gname)(a->lookup_gname_data, gid));
 }
@@ -401,11 +293,11 @@ archive_read_disk_gname(struct archive *_a, int64_t gid)
 const char *
 archive_read_disk_uname(struct archive *_a, int64_t uid)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	if (ARCHIVE_OK != __archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 		ARCHIVE_STATE_ANY, "archive_read_disk_uname"))
 		return (NULL);
-	if (a->lookup_uname == NULL)
+	if (a->lookup_uname == 0)
 		return (NULL);
 	return ((*a->lookup_uname)(a->lookup_uname_data, uid));
 }
@@ -416,11 +308,11 @@ archive_read_disk_set_gname_lookup(struct archive *_a,
     const char * (*lookup_gname)(void *private, int64_t gid),
     void (*cleanup_gname)(void *private))
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(&a->archive, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_set_gname_lookup");
 
-	if (a->cleanup_gname != NULL && a->lookup_gname_data != NULL)
+	if (a->cleanup_gname != 0 && a->lookup_gname_data != 0)
 		(a->cleanup_gname)(a->lookup_gname_data);
 
 	a->lookup_gname = lookup_gname;
@@ -435,11 +327,11 @@ archive_read_disk_set_uname_lookup(struct archive *_a,
     const char * (*lookup_uname)(void *private, int64_t uid),
     void (*cleanup_uname)(void *private))
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(&a->archive, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_set_uname_lookup");
 
-	if (a->cleanup_uname != NULL && a->lookup_uname_data != NULL)
+	if (a->cleanup_uname != 0 && a->lookup_uname_data != 0)
 		(a->cleanup_uname)(a->lookup_uname_data);
 
 	a->lookup_uname = lookup_uname;
@@ -476,7 +368,7 @@ archive_read_disk_new(void)
 static int
 _archive_read_free(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	int r;
 
 	if (_a == NULL)
@@ -490,9 +382,9 @@ _archive_read_free(struct archive *_a)
 		r = ARCHIVE_OK;
 
 	tree_free(a->tree);
-	if (a->cleanup_gname != NULL && a->lookup_gname_data != NULL)
+	if (a->cleanup_gname != 0 && a->lookup_gname_data != 0)
 		(a->cleanup_gname)(a->lookup_gname_data);
-	if (a->cleanup_uname != NULL && a->lookup_uname_data != NULL)
+	if (a->cleanup_uname != 0 && a->lookup_uname_data != 0)
 		(a->cleanup_uname)(a->lookup_uname_data);
 	archive_string_free(&a->archive.error_string);
 	archive_entry_free(a->entry);
@@ -505,7 +397,7 @@ _archive_read_free(struct archive *_a)
 static int
 _archive_read_close(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY | ARCHIVE_STATE_FATAL, "archive_read_close");
@@ -533,7 +425,7 @@ setup_symlink_mode(struct archive_read_disk *a, char symlink_mode,
 int
 archive_read_disk_set_symlink_logical(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_set_symlink_logical");
 	setup_symlink_mode(a, 'L', 1);
@@ -543,7 +435,7 @@ archive_read_disk_set_symlink_logical(struct archive *_a)
 int
 archive_read_disk_set_symlink_physical(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_set_symlink_physical");
 	setup_symlink_mode(a, 'P', 0);
@@ -553,7 +445,7 @@ archive_read_disk_set_symlink_physical(struct archive *_a)
 int
 archive_read_disk_set_symlink_hybrid(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_set_symlink_hybrid");
 	setup_symlink_mode(a, 'H', 1);/* Follow symlinks initially. */
@@ -566,7 +458,7 @@ archive_read_disk_set_atime_restored(struct archive *_a)
 #ifndef HAVE_UTIMES
 	static int warning_done = 0;
 #endif
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_restore_atime");
 #ifdef HAVE_UTIMES
@@ -589,7 +481,7 @@ archive_read_disk_set_atime_restored(struct archive *_a)
 int
 archive_read_disk_set_behavior(struct archive *_a, int flags)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	int r = ARCHIVE_OK;
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
@@ -654,7 +546,7 @@ setup_suitable_read_buffer(struct archive_read_disk *a)
 	size_t asize;
 	size_t s;
 
-	if (cf->allocation_ptr == NULL) {
+	if (cf->allocation_ptr == 0) {
 		/* If we couldn't get a filesystem alignment,
 		 * we use 4096 as default value but we won't use
 		 * O_DIRECT to open() and openat() operations. */
@@ -683,7 +575,7 @@ setup_suitable_read_buffer(struct archive_read_disk *a)
 			asize += xfer_align;
 		}
 		cf->allocation_ptr = malloc(asize);
-		if (cf->allocation_ptr == NULL) {
+		if (cf->allocation_ptr == 0) {
 			archive_set_error(&a->archive, ENOMEM,
 			    "Couldn't allocate memory");
 			a->archive.state = ARCHIVE_STATE_FATAL;
@@ -693,7 +585,7 @@ setup_suitable_read_buffer(struct archive_read_disk *a)
 		/*
 		 * Calculate proper address for the filesystem.
 		 */
-		s = (uintptr_t)cf->allocation_ptr;
+		s = cf->allocation_ptr;
 		s %= xfer_align;
 		if (s > 0)
 			s = xfer_align - s;
@@ -712,7 +604,7 @@ static int
 _archive_read_data_block(struct archive *_a, const void **buff,
     size_t *size, int64_t *offset)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	struct tree *t = a->tree;
 	int r;
 	ssize_t bytes;
@@ -1101,7 +993,7 @@ static int
 _archive_read_next_header(struct archive *_a, struct archive_entry **entryp)
 {
 	int ret;
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	*entryp = NULL;
 	ret = _archive_read_next_header2(_a, a->entry);
 	*entryp = a->entry;
@@ -1111,7 +1003,7 @@ _archive_read_next_header(struct archive *_a, struct archive_entry **entryp)
 static int
 _archive_read_next_header2(struct archive *_a, struct archive_entry *entry)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	struct tree *t;
 	int r;
 
@@ -1223,7 +1115,7 @@ archive_read_disk_set_matching(struct archive *_a, struct archive *_ma,
     void (*_excluded_func)(struct archive *, void *, struct archive_entry *),
     void *_client_data)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_read_disk_set_matching");
 	a->matching = _ma;
@@ -1237,7 +1129,7 @@ archive_read_disk_set_metadata_filter_callback(struct archive *_a,
     int (*_metadata_filter_func)(struct archive *, void *,
     struct archive_entry *), void *_client_data)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC, ARCHIVE_STATE_ANY,
 	    "archive_read_disk_set_metadata_filter_callback");
@@ -1250,7 +1142,7 @@ archive_read_disk_set_metadata_filter_callback(struct archive *_a,
 int
 archive_read_disk_can_descend(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	struct tree *t = a->tree;
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
@@ -1267,7 +1159,7 @@ archive_read_disk_can_descend(struct archive *_a)
 int
 archive_read_disk_descend(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	struct tree *t = a->tree;
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
@@ -1293,7 +1185,7 @@ archive_read_disk_descend(struct archive *_a)
 int
 archive_read_disk_open(struct archive *_a, const char *pathname)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC,
 	    ARCHIVE_STATE_NEW | ARCHIVE_STATE_CLOSED,
@@ -1306,7 +1198,7 @@ archive_read_disk_open(struct archive *_a, const char *pathname)
 int
 archive_read_disk_open_w(struct archive *_a, const wchar_t *pathname)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	struct archive_string path;
 	int ret;
 
@@ -1337,7 +1229,7 @@ archive_read_disk_open_w(struct archive *_a, const wchar_t *pathname)
 static int
 _archive_read_disk_open(struct archive *_a, const char *pathname)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	if (a->tree != NULL)
 		a->tree = tree_reopen(a->tree, pathname, a->restore_time);
@@ -1362,7 +1254,7 @@ _archive_read_disk_open(struct archive *_a, const char *pathname)
 int
 archive_read_disk_current_filesystem(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC, ARCHIVE_STATE_DATA,
 	    "archive_read_disk_current_filesystem");
@@ -1395,7 +1287,7 @@ update_current_filesystem(struct archive_read_disk *a, int64_t dev)
 	fid = t->max_filesystem_id++;
 	if (t->max_filesystem_id > t->allocated_filesytem) {
 		size_t s;
-		void *p;
+		struct filesystem * p;
 
 		s = t->max_filesystem_id * 2;
 		p = realloc(t->filesystem_table,
@@ -1405,7 +1297,7 @@ update_current_filesystem(struct archive_read_disk *a, int64_t dev)
 			    "Can't allocate tar data");
 			return (ARCHIVE_FATAL);
 		}
-		t->filesystem_table = (struct filesystem *)p;
+		t->filesystem_table = p;
 		t->allocated_filesytem = s;
 	}
 	t->current_filesystem_id = fid;
@@ -1426,7 +1318,7 @@ update_current_filesystem(struct archive_read_disk *a, int64_t dev)
 int
 archive_read_disk_current_filesystem_is_synthetic(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC, ARCHIVE_STATE_DATA,
 	    "archive_read_disk_current_filesystem");
@@ -1441,7 +1333,7 @@ archive_read_disk_current_filesystem_is_synthetic(struct archive *_a)
 int
 archive_read_disk_current_filesystem_is_remote(struct archive *_a)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 
 	archive_check_magic(_a, ARCHIVE_READ_DISK_MAGIC, ARCHIVE_STATE_DATA,
 	    "archive_read_disk_current_filesystem");

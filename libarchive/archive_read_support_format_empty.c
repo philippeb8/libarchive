@@ -30,6 +30,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_empty.c 1915
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 static int	archive_read_format_empty_bid(struct archive_read *, int);
 static int	archive_read_format_empty_read_data(struct archive_read *,
@@ -39,7 +40,7 @@ static int	archive_read_format_empty_read_header(struct archive_read *,
 int
 archive_read_support_format_empty(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	int r;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -49,14 +50,14 @@ archive_read_support_format_empty(struct archive *_a)
 	    NULL,
 	    NULL,
 	    archive_read_format_empty_bid,
-	    NULL,
+	    0,
 	    archive_read_format_empty_read_header,
 	    archive_read_format_empty_read_data,
-	    NULL,
-	    NULL,
-	    NULL,
-	    NULL,
-	    NULL);
+	    0,
+	    0,
+	    0,
+	    0,
+	    0);
 
 	return (r);
 }

@@ -61,6 +61,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_endian.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #ifndef HAVE_ZLIB_H
 #define adler32	lzo_adler32
@@ -104,7 +105,7 @@ static int lzop_bidder_init(struct archive_read_filter *);
 int
 archive_read_support_filter_lzop(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *reader;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -116,8 +117,8 @@ archive_read_support_filter_lzop(struct archive *_a)
 	reader->data = NULL;
 	reader->bid = lzop_bidder_bid;
 	reader->init = lzop_bidder_init;
-	reader->options = NULL;
-	reader->free = NULL;
+	reader->options = 0;
+	reader->free = 0;
 	/* Signal the extent of lzop support with the return value here. */
 #if defined(HAVE_LZO_LZOCONF_H) && defined(HAVE_LZO_LZO1X_H)
 	return (ARCHIVE_OK);

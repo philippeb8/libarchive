@@ -28,6 +28,7 @@ __FBSDID("$FreeBSD$");
 
 #include "archive_read_private.h"
 #include "archive_options_private.h"
+#include "archive_entry_private.h"
 
 static int	archive_set_format_option(struct archive *a,
 		    const char *m, const char *o, const char *v);
@@ -75,14 +76,14 @@ static int
 archive_set_format_option(struct archive *_a, const char *m, const char *o,
     const char *v)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	size_t i;
 	int r, rv = ARCHIVE_WARN, matched_modules = 0;
 
 	for (i = 0; i < sizeof(a->formats)/sizeof(a->formats[0]); i++) {
 		struct archive_format_descriptor *format = &a->formats[i];
 
-		if (format->options == NULL || format->name == NULL)
+		if (format->options == 0 || format->name == NULL)
 			/* This format does not support option. */
 			continue;
 		if (m != NULL) {
@@ -112,7 +113,7 @@ static int
 archive_set_filter_option(struct archive *_a, const char *m, const char *o,
     const char *v)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter *filter;
 	struct archive_read_filter_bidder *bidder;
 	int r, rv = ARCHIVE_WARN, matched_modules = 0;
@@ -121,7 +122,7 @@ archive_set_filter_option(struct archive *_a, const char *m, const char *o,
 		bidder = filter->bidder;
 		if (bidder == NULL)
 			continue;
-		if (bidder->options == NULL)
+		if (bidder->options == 0)
 			/* This bidder does not support option */
 			continue;
 		if (m != NULL) {

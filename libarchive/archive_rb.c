@@ -46,7 +46,7 @@
 #define	RB_FLAG_RED		0x1
 #define	RB_FLAG_MASK		(RB_FLAG_POSITION|RB_FLAG_RED)
 #define	RB_FATHER(rb) \
-    ((struct archive_rb_node *)((rb)->rb_info & ~RB_FLAG_MASK))
+    ((struct archive_rb_node *)(void *)((rb)->rb_info & ~RB_FLAG_MASK))
 #define	RB_SET_FATHER(rb, father) \
     ((void)((rb)->rb_info = (uintptr_t)(father)|((rb)->rb_info & RB_FLAG_MASK)))
 

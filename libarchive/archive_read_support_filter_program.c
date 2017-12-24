@@ -57,6 +57,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_string.h"
 #include "archive_read_private.h"
 #include "filter_fork.h"
+#include "archive_entry_private.h"
 
 
 #if ARCHIVE_VERSION_NUMBER < 4000000
@@ -140,7 +141,7 @@ set_bidder_signature(struct archive_read_filter_bidder *bidder,
 	bidder->data = state;
 	bidder->bid = program_bidder_bid;
 	bidder->init = program_bidder_init;
-	bidder->options = NULL;
+	bidder->options = 0;
 	bidder->free = program_bidder_free;
 	return (ARCHIVE_OK);
 }
@@ -149,7 +150,7 @@ int
 archive_read_support_filter_program_signature(struct archive *_a,
     const char *cmd, const void *signature, size_t signature_len)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 	struct program_bidder *state;
 
@@ -453,7 +454,7 @@ __archive_read_program(struct archive_read_filter *self, const char *cmd)
 
 	self->data = state;
 	self->read = program_filter_read;
-	self->skip = NULL;
+	self->skip = 0;
 	self->close = program_filter_close;
 
 	/* XXX Check that we can read at least one byte? */

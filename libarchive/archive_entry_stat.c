@@ -33,7 +33,9 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_entry_stat.c 201100 2009-12-28 0
 #include <stdlib.h>
 #endif
 
+#include "archive.h"
 #include "archive_entry.h"
+#include "archive_private.h"
 #include "archive_entry_private.h"
 
 const struct stat *

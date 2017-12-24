@@ -48,6 +48,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_ar.c 201101 
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 struct ar {
 	int64_t	 entry_bytes_remaining;
@@ -97,7 +98,7 @@ static int	ar_parse_common_header(struct ar *ar, struct archive_entry *,
 int
 archive_read_support_format_ar(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct ar *ar;
 	int r;
 
@@ -117,14 +118,14 @@ archive_read_support_format_ar(struct archive *_a)
 	    ar,
 	    "ar",
 	    archive_read_format_ar_bid,
-	    NULL,
+	    0,
 	    archive_read_format_ar_read_header,
 	    archive_read_format_ar_read_data,
 	    archive_read_format_ar_skip,
-	    NULL,
+	    0,
 	    archive_read_format_ar_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 
 	if (r != ARCHIVE_OK) {
 		free(ar);
@@ -374,7 +375,7 @@ _ar_read_header(struct archive_read *a, struct archive_entry *entry,
 			    "Can't allocate fname buffer");
 			return (ARCHIVE_FATAL);
 		}
-		strncpy(p, b, bsd_name_length);
+		strncpy(p, (const char *)b, bsd_name_length);
 		p[bsd_name_length] = '\0';
 
 		__archive_read_consume(a, bsd_name_length);

@@ -49,6 +49,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_xxhash.h"
+#include "archive_entry_private.h"
 
 #define LZ4_MAGICNUMBER		0x184d2204
 #define LZ4_SKIPPABLED		0x184d2a50
@@ -110,7 +111,7 @@ static ssize_t  lz4_filter_read_legacy_stream(struct archive_read_filter *,
 int
 archive_read_support_filter_lz4(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *reader;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -123,7 +124,7 @@ archive_read_support_filter_lz4(struct archive *_a)
 	reader->name = "lz4";
 	reader->bid = lz4_reader_bid;
 	reader->init = lz4_reader_init;
-	reader->options = NULL;
+	reader->options = 0;
 	reader->free = lz4_reader_free;
 #if defined(HAVE_LIBLZ4)
 	return (ARCHIVE_OK);

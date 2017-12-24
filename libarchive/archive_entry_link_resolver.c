@@ -42,6 +42,8 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_entry_link_resolver.c 201100 200
 
 #include "archive.h"
 #include "archive_entry.h"
+#include "archive_private.h"
+#include "archive_entry_private.h"
 
 /*
  * This is mostly a pretty straightforward hash table implementation.
@@ -383,7 +385,8 @@ insert_entry(struct archive_entry_linkresolver *res,
 static void
 grow_hash(struct archive_entry_linkresolver *res)
 {
-	struct links_entry *le, **new_buckets;
+	struct links_entry *le;
+        struct links_entry **new_buckets;
 	size_t new_size;
 	size_t i, bucket;
 

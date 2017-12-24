@@ -54,13 +54,13 @@ enum { tAM, tPM };
 /* Token types returned by nexttoken() */
 enum { tAGO = 260, tDAY, tDAYZONE, tAMPM, tMONTH, tMONTH_UNIT, tSEC_UNIT,
        tUNUMBER, tZONE, tDST };
-struct token { int token; time_t value; };
+struct token_t { int token; time_t value; };
 
 /*
  * Parser state.
  */
 struct gdstate {
-	struct token *tokenp; /* Pointer to next token. */
+	struct token_t *tokenp; /* Pointer to next token. */
 	/* HaveXxxx counts how many of this kind of phrase we've seen;
 	 * it's a fatal error to have more than one time, zone, day,
 	 * or date phrase. */
@@ -896,12 +896,14 @@ difftm (struct tm *a, struct tm *b)
 time_t
 __archive_get_date(time_t now, const char *p)
 {
-	struct token	tokens[256];
+	struct token_t	tokens[256];
 	struct gdstate	_gds;
-	struct token	*lasttoken;
+	struct token_t	*lasttoken;
 	struct gdstate	*gds;
-	struct tm	local, *tm;
-	struct tm	gmt, *gmt_ptr;
+	struct tm	local;
+        struct tm	*tm;
+	struct tm	gmt;
+        struct tm	*gmt_ptr;
 	time_t		Start;
 	time_t		tod;
 	long		tzone;

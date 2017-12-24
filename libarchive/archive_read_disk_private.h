@@ -30,11 +30,133 @@
 #error This header is only to be used internally to libarchive.
 #endif
 
+struct __dirstream { int i; };
+
+#ifdef HAVE_DIRENT_H
+#include <dirent.h>
+#endif
+
 #ifndef ARCHIVE_READ_DISK_PRIVATE_H_INCLUDED
 #define ARCHIVE_READ_DISK_PRIVATE_H_INCLUDED
 
 struct tree;
 struct archive_entry;
+
+#if !defined(_WIN32) || defined(__CYGWIN__)
+/*
+ * Local data for this package.
+ */
+struct entry_sparse {
+        int64_t		 length;
+        int64_t		 offset;
+};
+
+struct restore_time {
+	const char		*name;
+	time_t			 mtime;
+	long			 mtime_nsec;
+	time_t			 atime;
+	long			 atime_nsec;
+	mode_t			 filetype;
+	int			 noatime;
+};
+
+struct tree_entry {
+	int			 depth;
+	struct tree_entry	*next;
+	struct tree_entry	*parent;
+	struct archive_string	 name;
+	size_t			 dirname_length;
+	int64_t			 dev;
+	int64_t			 ino;
+	int			 flags;
+	int			 filesystem_id;
+	/* How to return back to the parent of a symlink. */
+	int			 symlink_parent_fd;
+	/* How to restore time of a directory. */
+	struct restore_time	 restore_time;
+};
+
+struct filesystem {
+	int64_t		dev;
+	int		synthetic;
+	int		remote;
+	int		noatime;
+#if defined(USE_READDIR_R)
+	size_t		name_max;
+#endif
+	long		incr_xfer_size;
+	long		max_xfer_size;
+	long		min_xfer_size;
+	long		xfer_align;
+
+	/*
+	 * Buffer used for reading file contents.
+	 */
+	/* Exactly allocated memory pointer. */
+	unsigned char	*allocation_ptr;
+	/* Pointer adjusted to the filesystem alignment . */
+	unsigned char	*buff;
+	size_t		 buff_size;
+};
+
+struct tree {
+	struct tree_entry	*stack;
+	struct tree_entry	*current;
+	DIR			*d;
+#define	INVALID_DIR_HANDLE NULL
+	struct dirent		*de;
+#if defined(USE_READDIR_R)
+	struct dirent		*dirent;
+	size_t			 dirent_allocated;
+#endif
+	int			 flags;
+	int			 visit_type;
+	/* Error code from last failed operation. */
+	int			 tree_errno;
+
+	/* Dynamically-sized buffer for holding path */
+	struct archive_string	 path;
+
+	/* Last path element */
+	const char		*basename;
+	/* Leading dir length */
+	size_t			 dirname_length;
+
+	int			 depth;
+	int			 openCount;
+	int			 maxOpenCount;
+	int			 initial_dir_fd;
+	int			 working_dir_fd;
+
+	struct stat		 lst;
+	struct stat		 st;
+	int			 descend;
+	int			 nlink;
+	/* How to restore time of a file. */
+	struct restore_time	 restore_time;
+
+	struct entry_sparse     *sparse_list, *current_sparse;
+	int			 sparse_count;
+	int			 sparse_list_size;
+
+	char			 initial_symlink_mode;
+	char			 symlink_mode;
+	struct filesystem	*current_filesystem;
+	struct filesystem	*filesystem_table;
+	int			 initial_filesystem_id;
+	int			 current_filesystem_id;
+	int			 max_filesystem_id;
+	int			 allocated_filesytem;
+
+	int			 entry_fd;
+	int			 entry_eof;
+	int64_t			 entry_remaining_bytes;
+	int64_t			 entry_total;
+	unsigned char		*entry_buff;
+	size_t			 entry_buff_size;
+};
+#endif
 
 struct archive_read_disk {
 	struct archive	archive;

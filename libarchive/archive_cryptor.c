@@ -76,8 +76,8 @@ pbkdf2_sha1(const char *pw, size_t pw_len, const uint8_t *salt,
 		return -1;
 
 	status = BCryptDeriveKeyPBKDF2(hAlg,
-		(PUCHAR)(uintptr_t)pw, (ULONG)pw_len,
-		(PUCHAR)(uintptr_t)salt, (ULONG)salt_len, rounds,
+		(PUCHAR)pw, (ULONG)pw_len,
+		(PUCHAR)salt, (ULONG)salt_len, rounds,
 		(PUCHAR)derived_key, (ULONG)derived_key_len, 0);
 
 	BCryptCloseAlgorithmProvider(hAlg, 0);
@@ -225,7 +225,7 @@ aes_ctr_init(archive_crypto_ctx *ctx, const uint8_t *key, size_t key_len)
 	}
 	status = BCryptGenerateSymmetricKey(hAlg, &hKey,
 		keyObj, keyObj_len,
-		(PUCHAR)(uintptr_t)key, (ULONG)key_len, 0);
+		(PUCHAR)key, (ULONG)key_len, 0);
 	if (!BCRYPT_SUCCESS(status)) {
 		BCryptCloseAlgorithmProvider(hAlg, 0);
 		HeapFree(GetProcessHeap(), 0, keyObj);

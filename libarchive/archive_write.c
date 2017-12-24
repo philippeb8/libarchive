@@ -142,7 +142,7 @@ archive_write_new(void)
 int
 archive_write_set_bytes_per_block(struct archive *_a, int bytes_per_block)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_bytes_per_block");
 	a->bytes_per_block = bytes_per_block;
@@ -155,7 +155,7 @@ archive_write_set_bytes_per_block(struct archive *_a, int bytes_per_block)
 int
 archive_write_get_bytes_per_block(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_get_bytes_per_block");
 	return (a->bytes_per_block);
@@ -168,7 +168,7 @@ archive_write_get_bytes_per_block(struct archive *_a)
 int
 archive_write_set_bytes_in_last_block(struct archive *_a, int bytes)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_set_bytes_in_last_block");
 	a->bytes_in_last_block = bytes;
@@ -181,7 +181,7 @@ archive_write_set_bytes_in_last_block(struct archive *_a, int bytes)
 int
 archive_write_get_bytes_in_last_block(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_get_bytes_in_last_block");
 	return (a->bytes_in_last_block);
@@ -194,7 +194,7 @@ archive_write_get_bytes_in_last_block(struct archive *_a)
 int
 archive_write_set_skip_file(struct archive *_a, int64_t d, int64_t i)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_ANY, "archive_write_set_skip_file");
 	a->skip_file_set = 1;
@@ -209,7 +209,7 @@ archive_write_set_skip_file(struct archive *_a, int64_t d, int64_t i)
 struct archive_write_filter *
 __archive_write_allocate_filter(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *f;
 
 	f = calloc(1, sizeof(*f));
@@ -232,7 +232,7 @@ __archive_write_filter(struct archive_write_filter *f,
 	int r;
 	if (length == 0)
 		return(ARCHIVE_OK);
-	if (f->write == NULL)
+	if (f->write == 0)
 		/* If unset, a fatal error has already ocuured, so this filter
 		 * didn't open. We cannot write anything. */
 		return(ARCHIVE_FATAL);
@@ -247,7 +247,7 @@ __archive_write_filter(struct archive_write_filter *f,
 int
 __archive_write_open_filter(struct archive_write_filter *f)
 {
-	if (f->open == NULL)
+	if (f->open == 0)
 		return (ARCHIVE_OK);
 	return (f->open)(f);
 }
@@ -258,7 +258,7 @@ __archive_write_open_filter(struct archive_write_filter *f)
 int
 __archive_write_close_filter(struct archive_write_filter *f)
 {
-	if (f->close != NULL)
+	if (f->close != 0)
 		return (f->close)(f);
 	if (f->next_filter != NULL)
 		return (__archive_write_close_filter(f->next_filter));
@@ -290,7 +290,7 @@ __archive_write_nulls(struct archive_write *a, size_t length)
 static int
 archive_write_client_open(struct archive_write_filter *f)
 {
-	struct archive_write *a = (struct archive_write *)f->archive;
+	struct archive_write *a = _containerof(f->archive, struct archive_write, archive);
 	struct archive_none *state;
 	void *buffer;
 	size_t buffer_size;
@@ -316,7 +316,7 @@ archive_write_client_open(struct archive_write_filter *f)
 	state->avail = state->buffer_size;
 	f->data = state;
 
-	if (a->client_opener == NULL)
+	if (a->client_opener == 0)
 		return (ARCHIVE_OK);
 	return (a->client_opener(f->archive, a->client_data));
 }
@@ -325,7 +325,7 @@ static int
 archive_write_client_write(struct archive_write_filter *f,
     const void *_buff, size_t length)
 {
-	struct archive_write *a = (struct archive_write *)f->archive;
+	struct archive_write *a = _containerof(f->archive, struct archive_write, archive);
         struct archive_none *state = (struct archive_none *)f->data;
 	const char *buff = (const char *)_buff;
 	ssize_t remaining, to_copy;
@@ -406,7 +406,7 @@ archive_write_client_write(struct archive_write_filter *f,
 static int
 archive_write_client_close(struct archive_write_filter *f)
 {
-	struct archive_write *a = (struct archive_write *)f->archive;
+	struct archive_write *a = _containerof(f->archive, struct archive_write, archive);
 	struct archive_none *state = (struct archive_none *)f->data;
 	ssize_t block_length;
 	ssize_t target_block_length;
@@ -442,7 +442,7 @@ archive_write_client_close(struct archive_write_filter *f)
 	free(state->buffer);
 	free(state);
 	/* Clear the close handler myself not to be called again. */
-	f->close = NULL;
+	f->close = 0;
 	a->client_data = NULL;
 	/* Clear passphrase. */
 	if (a->passphrase != NULL) {
@@ -461,7 +461,7 @@ archive_write_open(struct archive *_a, void *client_data,
     archive_open_callback *opener, archive_write_callback *writer,
     archive_close_callback *closer)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *client_filter;
 	int ret, r1;
 
@@ -497,7 +497,7 @@ archive_write_open(struct archive *_a, void *client_data,
 static int
 _archive_write_close(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int r = ARCHIVE_OK, r1 = ARCHIVE_OK;
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
@@ -511,12 +511,12 @@ _archive_write_close(struct archive *_a)
 
 	/* Finish the last entry if a finish callback is specified */
 	if (a->archive.state == ARCHIVE_STATE_DATA
-	    && a->format_finish_entry != NULL)
+	    && a->format_finish_entry != 0)
 		r = ((a->format_finish_entry)(a));
 
 	/* Finish off the archive. */
 	/* TODO: have format closers invoke compression close. */
-	if (a->format_close != NULL) {
+	if (a->format_close != 0) {
 		r1 = (a->format_close)(a);
 		if (r1 < r)
 			r = r1;
@@ -535,7 +535,7 @@ _archive_write_close(struct archive *_a)
 static int
 _archive_write_filter_count(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *p = a->filter_first;
 	int count = 0;
 	while(p) {
@@ -548,13 +548,13 @@ _archive_write_filter_count(struct archive *_a)
 void
 __archive_write_filters_free(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int r = ARCHIVE_OK, r1;
 
 	while (a->filter_first != NULL) {
 		struct archive_write_filter *next
 		    = a->filter_first->next_filter;
-		if (a->filter_first->free != NULL) {
+		if (a->filter_first->free != 0) {
 			r1 = (*a->filter_first->free)(a->filter_first);
 			if (r > r1)
 				r = r1;
@@ -575,7 +575,7 @@ __archive_write_filters_free(struct archive *_a)
 static int
 _archive_write_free(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int r = ARCHIVE_OK, r1;
 
 	if (_a == NULL)
@@ -587,7 +587,7 @@ _archive_write_free(struct archive *_a)
 		r = archive_write_close(&a->archive);
 
 	/* Release format resources. */
-	if (a->format_free != NULL) {
+	if (a->format_free != 0) {
 		r1 = (a->format_free)(a);
 		if (r1 < r)
 			r = r1;
@@ -596,7 +596,7 @@ _archive_write_free(struct archive *_a)
 	__archive_write_filters_free(_a);
 
 	/* Release various dynamic buffers. */
-	free((void *)(uintptr_t)(const void *)a->nulls);
+	free(a->nulls);
 	archive_string_free(&a->archive.error_string);
 	if (a->passphrase != NULL) {
 		/* A passphrase should be cleaned. */
@@ -615,20 +615,23 @@ _archive_write_free(struct archive *_a)
 static int
 _archive_write_header(struct archive *_a, struct archive_entry *entry)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int ret, r2;
+        printf("%s: %i\n", __PRETTY_FUNCTION__, __LINE__);
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_DATA | ARCHIVE_STATE_HEADER, "archive_write_header");
 	archive_clear_error(&a->archive);
 
-	if (a->format_write_header == NULL) {
+        printf("%s: %i\n", __PRETTY_FUNCTION__, __LINE__);
+	if (a->format_write_header == 0) {
 		archive_set_error(&(a->archive), -1,
 		    "Format must be set before you can write to an archive.");
 		a->archive.state = ARCHIVE_STATE_FATAL;
 		return (ARCHIVE_FATAL);
 	}
 
+        printf("%s: %i\n", __PRETTY_FUNCTION__, __LINE__);
 	/* In particular, "retry" and "fatal" get returned immediately. */
 	ret = archive_write_finish_entry(&a->archive);
 	if (ret == ARCHIVE_FATAL) {
@@ -638,6 +641,7 @@ _archive_write_header(struct archive *_a, struct archive_entry *entry)
 	if (ret < ARCHIVE_OK && ret != ARCHIVE_WARN)
 		return (ret);
 
+        printf("%s: %i\n", __PRETTY_FUNCTION__, __LINE__);
 	if (a->skip_file_set &&
 	    archive_entry_dev_is_set(entry) &&
 	    archive_entry_ino_is_set(entry) &&
@@ -648,6 +652,7 @@ _archive_write_header(struct archive *_a, struct archive_entry *entry)
 		return (ARCHIVE_FAILED);
 	}
 
+        printf("%s: %i\n", __PRETTY_FUNCTION__, __LINE__);
 	/* Format and write header. */
 	r2 = ((a->format_write_header)(a, entry));
 	if (r2 == ARCHIVE_FAILED) {
@@ -660,6 +665,7 @@ _archive_write_header(struct archive *_a, struct archive_entry *entry)
 	if (r2 < ret)
 		ret = r2;
 
+        printf("%s: %i\n", __PRETTY_FUNCTION__, __LINE__);
 	a->archive.state = ARCHIVE_STATE_DATA;
 	return (ret);
 }
@@ -667,14 +673,14 @@ _archive_write_header(struct archive *_a, struct archive_entry *entry)
 static int
 _archive_write_finish_entry(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int ret = ARCHIVE_OK;
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_HEADER | ARCHIVE_STATE_DATA,
 	    "archive_write_finish_entry");
 	if (a->archive.state & ARCHIVE_STATE_DATA
-	    && a->format_finish_entry != NULL)
+	    && a->format_finish_entry != 0)
 		ret = (a->format_finish_entry)(a);
 	a->archive.state = ARCHIVE_STATE_HEADER;
 	return (ret);
@@ -686,7 +692,7 @@ _archive_write_finish_entry(struct archive *_a)
 static ssize_t
 _archive_write_data(struct archive *_a, const void *buff, size_t s)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	const size_t max_write = INT_MAX;
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,
@@ -701,7 +707,7 @@ _archive_write_data(struct archive *_a, const void *buff, size_t s)
 static struct archive_write_filter *
 filter_lookup(struct archive *_a, int n)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *f = a->filter_first;
 	if (n == -1)
 		return a->filter_last;
@@ -725,7 +731,7 @@ static const char *
 _archive_filter_name(struct archive *_a, int n)
 {
 	struct archive_write_filter *f = filter_lookup(_a, n);
-	return f != NULL ? f->name : NULL;
+	return f != NULL ? f->name : (const char *)NULL;
 }
 
 static int64_t

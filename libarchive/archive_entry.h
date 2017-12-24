@@ -40,8 +40,10 @@
  */
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <stddef.h>  /* for wchar_t */
 #include <time.h>
+#include <unistd.h>
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #include <windows.h>
@@ -111,7 +113,7 @@ extern "C" {
 /*
  * Description of an archive entry.
  *
- * You can think of this as "struct stat" with some text fields added in.
+ * You can think of this as "stat_" with some text fields added in.
  *
  * TODO: Add "comment", "charset", and possibly other entries that are
  * supported by "pax interchange" format.  However, GNU, ustar, cpio,
@@ -126,6 +128,8 @@ extern "C" {
  */
 struct archive;
 struct archive_entry;
+
+typedef struct stat stat_;
 
 /*
  * File-type constants.  These are returned from archive_entry_filetype()
@@ -335,7 +339,7 @@ __LA_DECL void	archive_entry_set_is_data_encrypted(struct archive_entry *, char 
 __LA_DECL void	archive_entry_set_is_metadata_encrypted(struct archive_entry *, char is_encrypted);
 /*
  * Routines to bulk copy fields to/from a platform-native "struct
- * stat."  Libarchive used to just store a struct stat inside of each
+ * stat."  Libarchive used to just store a stat_ inside of each
  * archive_entry object, but this created issues when trying to
  * manipulate archives on systems different than the ones they were
  * created on.
@@ -345,8 +349,8 @@ __LA_DECL void	archive_entry_set_is_metadata_encrypted(struct archive_entry *, c
  * that archive_entry_stat is magically defined to
  * archive_entry_stat32 or archive_entry_stat64 as appropriate.
  */
-__LA_DECL const struct stat	*archive_entry_stat(struct archive_entry *);
-__LA_DECL void	archive_entry_copy_stat(struct archive_entry *, const struct stat *);
+__LA_DECL const stat_	*archive_entry_stat(struct archive_entry *);
+__LA_DECL void	archive_entry_copy_stat(struct archive_entry *, const stat_ *);
 
 /*
  * Storage for Mac OS-specific AppleDouble metadata information.

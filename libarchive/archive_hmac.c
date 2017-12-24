@@ -122,7 +122,7 @@ static void
 __hmac_sha1_update(archive_hmac_sha1_ctx *ctx, const uint8_t *data,
 	size_t data_len)
 {
-	BCryptHashData(ctx->hHash, (PUCHAR)(uintptr_t)data, (ULONG)data_len, 0);
+	BCryptHashData(ctx->hHash, (PUCHAR)data, (ULONG)data_len, 0);
 }
 
 static void

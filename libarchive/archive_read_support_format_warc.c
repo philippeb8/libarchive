@@ -71,6 +71,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 typedef enum {
 	WT_NONE,
@@ -94,12 +95,12 @@ typedef enum {
 	LAST_WT
 } warc_type_t;
 
-typedef struct {
+typedef struct warc_string_t_ {
 	size_t len;
 	const char *str;
 } warc_string_t;
 
-typedef struct {
+typedef struct warc_strbuf_t_ {
 	size_t len;
 	char *str;
 } warc_strbuf_t;
@@ -127,7 +128,7 @@ static int _warc_skip(struct archive_read *a);
 static int _warc_rdhdr(struct archive_read *a, struct archive_entry *e);
 
 /* private routines */
-static unsigned int _warc_rdver(const char buf[10], size_t bsz);
+static unsigned int _warc_rdver(const char *buf, size_t bsz);
 static unsigned int _warc_rdtyp(const char *buf, size_t bsz);
 static warc_string_t _warc_rduri(const char *buf, size_t bsz);
 static ssize_t _warc_rdlen(const char *buf, size_t bsz);
@@ -139,7 +140,7 @@ static const char *_warc_find_eoh(const char *buf, size_t bsz);
 int
 archive_read_support_format_warc(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct warc_s *w;
 	int r;
 
@@ -155,8 +156,8 @@ archive_read_support_format_warc(struct archive *_a)
 
 	r = __archive_read_register_format(
 		a, w, "warc",
-		_warc_bid, NULL, _warc_rdhdr, _warc_read,
-		_warc_skip, NULL, _warc_cleanup, NULL, NULL);
+		_warc_bid, 0, _warc_rdhdr, _warc_read,
+		_warc_skip, 0, _warc_cleanup, 0, 0);
 
 	if (r != ARCHIVE_OK) {
 		free(w);
@@ -290,7 +291,7 @@ start_over:
 		w->pver = ver;
 	}
 	/* start off with the type */
-	ftyp = _warc_rdtyp(buf, eoh - buf);
+	ftyp = (warc_type_t)_warc_rdtyp(buf, eoh - buf);
 	/* and let future calls know about the content */
 	w->cntlen = cntlen;
 	w->cntoff = 0U;
@@ -369,7 +370,6 @@ _warc_read(struct archive_read *a, const void **buf, size_t *bsz, int64_t *off)
 	ssize_t nrd;
 
 	if (w->cntoff >= w->cntlen) {
-	eof:
 		/* it's our lucky day, no work, we can leave early */
 		*buf = NULL;
 		*bsz = 0U;
@@ -384,7 +384,12 @@ _warc_read(struct archive_read *a, const void **buf, size_t *bsz, int64_t *off)
 		/* big catastrophe */
 		return (int)nrd;
 	} else if (nrd == 0) {
-		goto eof;
+		/* it's our lucky day, no work, we can leave early */
+		*buf = NULL;
+		*bsz = 0U;
+		*off = w->cntoff + 4U/*for \r\n\r\n separator*/;
+		w->unconsumed = 0U;
+		return (ARCHIVE_EOF);
 	} else if ((size_t)nrd > w->cntlen - w->cntoff) {
 		/* clamp to content-length */
 		nrd = w->cntlen - w->cntoff;
@@ -414,7 +419,7 @@ _warc_skip(struct archive_read *a)
 static void*
 deconst(const void *c)
 {
-	return (char *)0x1 + (((const char *)c) - (const char *)0x1);
+	return (char *)(void *)0x1 + (((const char *)c) - (const char *)(void *)0x1);
 }
 
 static char*
@@ -578,7 +583,7 @@ out:
 }
 
 static unsigned int
-_warc_rdver(const char buf[10], size_t bsz)
+_warc_rdver(const char * buf, size_t bsz)
 {
 	static const char magic[] = "WARC/";
 	unsigned int ver;
@@ -611,7 +616,7 @@ _warc_rdver(const char buf[10], size_t bsz)
 				/* set up major version */
 				ver = (buf[0U] - '0') * 10000U;
 				/* minor version, anyone? */
-				ver += (strtol(buf + 2U, &on, 10)) * 100U;
+				ver += (strtol(buf + 2U, 0, 10)) * 100U;
 				/* don't parse anything else */
 				if (on > buf + 2U) {
 					break;
@@ -732,7 +737,7 @@ _warc_rdlen(const char *buf, size_t bsz)
 
 	/* strtol kindly overreads whitespace for us, so use that */
 	val += sizeof(_key) - 1U;
-	len = strtol(val, &on, 10);
+	len = strtol(val, 0, 10);
 	if (on == NULL || !isspace((unsigned char)*on)) {
 		/* hm, can we trust that number?  Best not. */
 		return -1;

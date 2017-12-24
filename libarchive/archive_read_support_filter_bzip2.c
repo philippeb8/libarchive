@@ -47,6 +47,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #if defined(HAVE_BZLIB_H) && defined(BZ_CONFIG_ERROR)
 struct private_data {
@@ -84,7 +85,7 @@ archive_read_support_compression_bzip2(struct archive *a)
 int
 archive_read_support_filter_bzip2(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *reader;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -97,7 +98,7 @@ archive_read_support_filter_bzip2(struct archive *_a)
 	reader->name = "bzip2";
 	reader->bid = bzip2_reader_bid;
 	reader->init = bzip2_reader_init;
-	reader->options = NULL;
+	reader->options = 0;
 	reader->free = bzip2_reader_free;
 #if defined(HAVE_BZLIB_H) && defined(BZ_CONFIG_ERROR)
 	return (ARCHIVE_OK);
@@ -293,7 +294,7 @@ bzip2_filter_read(struct archive_read_filter *self, const void **p)
 			    "truncated bzip2 input");
 			return (ARCHIVE_FATAL);
 		}
-		state->stream.next_in = (char *)(uintptr_t)read_buf;
+		state->stream.next_in = (char *)read_buf;
 		state->stream.avail_in = ret;
 		/* There is no more data, return whatever we have. */
 		if (ret == 0) {

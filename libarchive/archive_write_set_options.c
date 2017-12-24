@@ -75,7 +75,7 @@ static int
 archive_set_format_option(struct archive *_a, const char *m, const char *o,
     const char *v)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 
 	if (a->format_name == NULL)
 		return (m == NULL)?ARCHIVE_FAILED:ARCHIVE_WARN - 1;
@@ -83,7 +83,7 @@ archive_set_format_option(struct archive *_a, const char *m, const char *o,
 	 * _archive_set_option[s]. */
 	if (m != NULL && strcmp(m, a->format_name) != 0)
 		return (ARCHIVE_WARN - 1);
-	if (a->format_options == NULL)
+	if (a->format_options == 0)
 		return (ARCHIVE_WARN);
 	return a->format_options(a, o, v);
 }
@@ -92,12 +92,12 @@ static int
 archive_set_filter_option(struct archive *_a, const char *m, const char *o,
     const char *v)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *filter;
 	int r, rv = ARCHIVE_WARN;
 
 	for (filter = a->filter_first; filter != NULL; filter = filter->next_filter) {
-		if (filter->options == NULL)
+		if (filter->options == 0)
 			continue;
 		if (m != NULL && strcmp(filter->name, m) != 0)
 			continue;

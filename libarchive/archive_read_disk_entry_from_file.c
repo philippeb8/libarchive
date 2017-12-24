@@ -102,6 +102,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_disk_entry_from_file.c 2010
 #include "archive_entry.h"
 #include "archive_private.h"
 #include "archive_read_disk_private.h"
+#include "archive_entry_private.h"
 
 #ifndef O_CLOEXEC
 #define O_CLOEXEC	0
@@ -132,7 +133,7 @@ archive_read_disk_entry_from_file(struct archive *_a,
     int fd,
     const struct stat *st)
 {
-	struct archive_read_disk *a = (struct archive_read_disk *)_a;
+	struct archive_read_disk *a = _containerof(_a, struct archive_read_disk, archive);
 	const char *path, *name;
 	struct stat s;
 	int initial_fd = fd;

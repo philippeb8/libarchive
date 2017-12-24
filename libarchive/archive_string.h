@@ -48,26 +48,55 @@
 
 #include "archive.h"
 
-/*
- * Basic resizable/reusable string support similar to Java's "StringBuffer."
- *
- * Unlike sbuf(9), the buffers here are fully reusable and track the
- * length throughout.
- */
-
-struct archive_string {
-	char	*s;  /* Pointer to the storage */
-	size_t	 length; /* Length of 's' in characters */
-	size_t	 buffer_length; /* Length of malloc-ed storage in bytes. */
-};
-
-struct archive_wstring {
-	wchar_t	*s;  /* Pointer to the storage */
-	size_t	 length; /* Length of 's' in characters */
-	size_t	 buffer_length; /* Length of malloc-ed storage in bytes. */
-};
-
 struct archive_string_conv;
+
+typedef int (*converter_)(struct archive_string *, const void *, size_t,
+    struct archive_string_conv *);
+
+struct archive_string_conv {
+	struct archive_string_conv	*next;
+	char				*from_charset;
+	char				*to_charset;
+	unsigned			 from_cp;
+	unsigned			 to_cp;
+	/* Set 1 if from_charset and to_charset are the same. */
+	int				 same;
+	int				 flag;
+#define SCONV_TO_CHARSET	1	/* MBS is being converted to specified
+					 * charset. */
+#define SCONV_FROM_CHARSET	(1<<1)	/* MBS is being converted from
+					 * specified charset. */
+#define SCONV_BEST_EFFORT 	(1<<2)	/* Copy at least ASCII code. */
+#define SCONV_WIN_CP	 	(1<<3)	/* Use Windows API for converting
+					 * MBS. */
+#define SCONV_UTF8_LIBARCHIVE_2 (1<<4)	/* Incorrect UTF-8 made by libarchive
+					 * 2.x in the wrong assumption. */
+#define SCONV_NORMALIZATION_C	(1<<6)	/* Need normalization to be Form C.
+					 * Before UTF-8 characters are actually
+					 * processed. */
+#define SCONV_NORMALIZATION_D	(1<<7)	/* Need normalization to be Form D.
+					 * Before UTF-8 characters are actually
+					 * processed.
+					 * Currently this only for MAC OS X. */
+#define SCONV_TO_UTF8		(1<<8)	/* "to charset" side is UTF-8. */
+#define SCONV_FROM_UTF8		(1<<9)	/* "from charset" side is UTF-8. */
+#define SCONV_TO_UTF16BE 	(1<<10)	/* "to charset" side is UTF-16BE. */
+#define SCONV_FROM_UTF16BE 	(1<<11)	/* "from charset" side is UTF-16BE. */
+#define SCONV_TO_UTF16LE 	(1<<12)	/* "to charset" side is UTF-16LE. */
+#define SCONV_FROM_UTF16LE 	(1<<13)	/* "from charset" side is UTF-16LE. */
+#define SCONV_TO_UTF16		(SCONV_TO_UTF16BE | SCONV_TO_UTF16LE)
+#define SCONV_FROM_UTF16	(SCONV_FROM_UTF16BE | SCONV_FROM_UTF16LE)
+
+#if HAVE_ICONV
+	iconv_t				 cd;
+	iconv_t				 cd_w;/* Use at archive_mstring on
+				 	       * Windows. */
+#endif
+	/* A temporary buffer for normalization. */
+	struct archive_string		 utftmp;
+	converter_                       converter[2];
+	int				 nconverter;
+};
 
 /* Initialize an archive_string object on the stack or elsewhere. */
 #define	archive_string_init(a)	\
@@ -196,26 +225,6 @@ void	archive_string_sprintf(struct archive_string *, const char *, ...)
 int archive_wstring_append_from_mbs(struct archive_wstring *dest,
     const char *, size_t);
 
-
-/* A "multistring" can hold Unicode, UTF8, or MBS versions of
- * the string.  If you set and read the same version, no translation
- * is done.  If you set and read different versions, the library
- * will attempt to transparently convert.
- */
-struct archive_mstring {
-	struct archive_string aes_mbs;
-	struct archive_string aes_utf8;
-	struct archive_wstring aes_wcs;
-	struct archive_string aes_mbs_in_locale;
-	/* Bitmap of which of the above are valid.  Because we're lazy
-	 * about malloc-ing and reusing the underlying storage, we
-	 * can't rely on NULL pointers to indicate whether a string
-	 * has been set. */
-	int aes_set;
-#define	AES_SET_MBS 1
-#define	AES_SET_UTF8 2
-#define	AES_SET_WCS 4
-};
 
 void	archive_mstring_clean(struct archive_mstring *);
 void	archive_mstring_copy(struct archive_mstring *dest, struct archive_mstring *src);

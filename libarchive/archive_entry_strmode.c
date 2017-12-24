@@ -34,6 +34,7 @@ __FBSDID("$FreeBSD: src/lib/libarchive/archive_entry_strmode.c,v 1.4 2008/06/15 
 #endif
 
 #include "archive_entry.h"
+#include "archive_private.h"
 #include "archive_entry_private.h"
 
 const char *

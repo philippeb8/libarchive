@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #define LRZIP_HEADER_MAGIC "LRZI"
 #define LRZIP_HEADER_MAGIC_LEN 4
@@ -63,7 +64,7 @@ lrzip_reader_free(struct archive_read_filter_bidder *self)
 int
 archive_read_support_filter_lrzip(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *reader;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -76,7 +77,7 @@ archive_read_support_filter_lrzip(struct archive *_a)
 	reader->name = "lrzip";
 	reader->bid = lrzip_bidder_bid;
 	reader->init = lrzip_bidder_init;
-	reader->options = NULL;
+	reader->options = 0;
 	reader->free = lrzip_reader_free;
 	/* This filter always uses an external program. */
 	archive_set_error(_a, ARCHIVE_ERRNO_MISC,

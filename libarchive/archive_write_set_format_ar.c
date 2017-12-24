@@ -85,7 +85,7 @@ static int		 format_decimal(int64_t v, char *p, int s);
 int
 archive_write_set_format_ar_bsd(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int r;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
@@ -101,7 +101,7 @@ archive_write_set_format_ar_bsd(struct archive *_a)
 int
 archive_write_set_format_ar_svr4(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	int r;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
@@ -123,7 +123,7 @@ archive_write_set_format_ar(struct archive_write *a)
 	struct ar_w *ar;
 
 	/* If someone else was already registered, unregister them. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	ar = (struct ar_w *)malloc(sizeof(*ar));
@@ -381,7 +381,7 @@ archive_write_ar_data(struct archive_write *a, const void *buff, size_t s)
 			    "Can't allocate strtab buffer");
 			return (ARCHIVE_FATAL);
 		}
-		strncpy(ar->strtab, buff, s);
+		strncpy(ar->strtab, (const char *)buff, s);
 		ar->has_strtab = 1;
 	}
 

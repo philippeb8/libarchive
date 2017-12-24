@@ -148,7 +148,7 @@ struct archive_read_passphrase {
 	struct archive_read_passphrase *next;
 };
 
-struct archive_read_extract {
+struct archive_read_extract_ {
 	struct archive *ad; /* archive_write_disk object */
 
 	/* Progress function invoked during extract. */
@@ -156,6 +156,29 @@ struct archive_read_extract {
 	void			 *extract_progress_user_data;
 };
 
+struct archive_format_descriptor {
+        void	 *data;
+        const char *name;
+        int	(*bid)(struct archive_read *, int best_bid);
+        int	(*options)(struct archive_read *, const char *key,
+            const char *value);
+        int	(*read_header)(struct archive_read *, struct archive_entry *);
+        int	(*read_data)(struct archive_read *, const void **, size_t *, int64_t *);
+        int	(*read_data_skip)(struct archive_read *);
+        int64_t	(*seek_data)(struct archive_read *, int64_t, int);
+        int	(*cleanup)(struct archive_read *);
+        int	(*format_capabilties)(struct archive_read *);
+        int	(*has_encrypted_entries)(struct archive_read *);
+};
+
+struct passphrase {
+        struct archive_read_passphrase *first;
+        struct archive_read_passphrase **last;
+        int candidate;
+        archive_passphrase_callback *callback;
+        void *client_data;
+};
+	
 struct archive_read {
 	struct archive	archive;
 
@@ -193,38 +216,19 @@ struct archive_read {
 	 * examine.
 	 */
 
-	struct archive_format_descriptor {
-		void	 *data;
-		const char *name;
-		int	(*bid)(struct archive_read *, int best_bid);
-		int	(*options)(struct archive_read *, const char *key,
-		    const char *value);
-		int	(*read_header)(struct archive_read *, struct archive_entry *);
-		int	(*read_data)(struct archive_read *, const void **, size_t *, int64_t *);
-		int	(*read_data_skip)(struct archive_read *);
-		int64_t	(*seek_data)(struct archive_read *, int64_t, int);
-		int	(*cleanup)(struct archive_read *);
-		int	(*format_capabilties)(struct archive_read *);
-		int	(*has_encrypted_entries)(struct archive_read *);
-	}	formats[16];
+	struct archive_format_descriptor	 formats[16];
 	struct archive_format_descriptor	*format; /* Active format. */
 
 	/*
 	 * Various information needed by archive_extract.
 	 */
-	struct archive_read_extract		*extract;
+	struct archive_read_extract_		*extract;
 	int			(*cleanup_archive_extract)(struct archive_read *);
 
 	/*
 	 * Decryption passphrase.
 	 */
-	struct {
-		struct archive_read_passphrase *first;
-		struct archive_read_passphrase **last;
-		int candidate;
-		archive_passphrase_callback *callback;
-		void *client_data;
-	}		passphrases;
+	struct passphrase passphrases;
 };
 
 int	__archive_read_register_format(struct archive_read *a,
@@ -253,7 +257,7 @@ int64_t	__archive_read_filter_consume(struct archive_read_filter *, int64_t);
 int __archive_read_program(struct archive_read_filter *, const char *);
 void __archive_read_free_filters(struct archive_read *);
 int  __archive_read_close_filters(struct archive_read *);
-struct archive_read_extract *__archive_read_get_extract(struct archive_read *);
+struct archive_read_extract_ *__archive_read_get_extract(struct archive_read *);
 
 
 /*

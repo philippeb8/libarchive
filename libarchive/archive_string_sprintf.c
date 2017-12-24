@@ -145,7 +145,7 @@ archive_string_vsprintf(struct archive_string *as, const char *fmt,
 		case 's':
 			switch(long_flag) {
 			case 'l':
-				pw = va_arg(ap, wchar_t *);
+				pw = (wchar_t *)(void *)va_arg(ap, uintptr_t);
 				if (pw == NULL)
 					pw = L"(null)";
 				if (archive_string_append_from_wcs(as, pw,
@@ -153,7 +153,7 @@ archive_string_vsprintf(struct archive_string *as, const char *fmt,
 					__archive_errx(1, "Out of memory");
 				break;
 			default:
-				p2 = va_arg(ap, char *);
+				p2 = (char *)(void *)va_arg(ap, uintptr_t);
 				if (p2 == NULL)
 					p2 = "(null)";
 				archive_strcat(as, p2);
@@ -161,7 +161,7 @@ archive_string_vsprintf(struct archive_string *as, const char *fmt,
 			}
 			break;
 		case 'S':
-			pw = va_arg(ap, wchar_t *);
+			pw = (wchar_t *)(void *)va_arg(ap, uintptr_t);
 			if (pw == NULL)
 				pw = L"(null)";
 			if (archive_string_append_from_wcs(as, pw,

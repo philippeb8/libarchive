@@ -548,7 +548,7 @@ __archive_mktemp(const char *tmpdir)
 		p = tp;
 		archive_random(p, ep - p);
 		while (p < ep) {
-			int d = *((unsigned char *)p) % sizeof(num);
+			int d = *((unsigned char *)(void *)p) % sizeof(num);
 			*p++ = num[d];
 		}
 		fd = open(temp_name.s, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC,
@@ -599,7 +599,8 @@ static int
 archive_utility_string_sort_helper(char **strings, unsigned int n)
 {
 	unsigned int i, lesser_count, greater_count;
-	char **lesser, **greater, **tmp, *pivot;
+	char **lesser, **greater, **tmp;
+        char *pivot;
 	int retval1, retval2;
 
 	/* A list of 0 or 1 elements is already sorted */

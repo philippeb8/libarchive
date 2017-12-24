@@ -505,10 +505,10 @@ struct archive_xxhash __archive_xxhash = {
  */
 const
 struct archive_xxhash __archive_xxhash = {
-	NULL,
-	NULL,
-	NULL,
-	NULL
+	0,
+	0,
+	0,
+	0
 };
 
 #endif /* HAVE_LIBLZ4 */

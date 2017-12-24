@@ -49,6 +49,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_endian.h"
+#include "archive_entry_private.h"
 
 #ifndef HAVE_ZLIB_H
 #include "archive_crc32.h"
@@ -116,20 +117,24 @@ struct _7z_digests {
 };
 
 
+struct _7z_coder {
+        unsigned long	 codec;
+        uint64_t	 numInStreams;
+        uint64_t	 numOutStreams;
+        uint64_t	 propertiesSize;
+        unsigned char	*properties;
+};
+
+struct bindPairs_ {
+        uint64_t	 inIndex;
+        uint64_t	 outIndex;
+};
+
 struct _7z_folder {
 	uint64_t		 numCoders;
-	struct _7z_coder {
-		unsigned long	 codec;
-		uint64_t	 numInStreams;
-		uint64_t	 numOutStreams;
-		uint64_t	 propertiesSize;
-		unsigned char	*properties;
-	} *coders;
+	struct _7z_coder        *coders;
 	uint64_t		 numBindPairs;
-	struct {
-		uint64_t	 inIndex;
-		uint64_t	 outIndex;
-	} *bindPairs;
+	struct bindPairs_       *bindPairs;
 	uint64_t		 numPackedStreams;
 	uint64_t		*packedStreams;
 	uint64_t		 numInStreams;
@@ -203,6 +208,16 @@ struct _7zip_entry {
 	long			 ctime_ns;
 	uint32_t		 mode;
 	uint32_t		 attr;
+};
+
+struct ppstream_ {
+        const unsigned char	*next_in;
+        int64_t			 avail_in;
+        int64_t			 total_in;
+        unsigned char		*next_out;
+        int64_t			 avail_out;
+        int64_t			 total_out;
+        int			 overconsumed;
 };
 
 struct _7zip {
@@ -283,15 +298,7 @@ struct _7zip {
 	CPpmd7			 ppmd7_context;
 	CPpmd7z_RangeDec	 range_dec;
 	IByteIn			 bytein;
-	struct {
-		const unsigned char	*next_in;
-		int64_t			 avail_in;
-		int64_t			 total_in;
-		unsigned char		*next_out;
-		int64_t			 avail_out;
-		int64_t			 total_out;
-		int			 overconsumed;
-	} ppstream;
+	struct ppstream_         ppstream;
 	int			 ppmd7_valid;
 
 	/* Decoding BCJ and BCJ2 data. */
@@ -402,7 +409,7 @@ static ssize_t		Bcj2_Decode(struct _7zip *, uint8_t *, size_t);
 int
 archive_read_support_format_7zip(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct _7zip *zip;
 	int r;
 
@@ -427,11 +434,11 @@ archive_read_support_format_7zip(struct archive *_a)
 	    zip,
 	    "7zip",
 	    archive_read_format_7zip_bid,
-	    NULL,
+	    0,
 	    archive_read_format_7zip_read_header,
 	    archive_read_format_7zip_read_data,
 	    archive_read_format_7zip_read_data_skip,
-	    NULL,
+	    0,
 	    archive_read_format_7zip_cleanup,
 	    archive_read_support_format_7zip_capabilities,
 	    archive_read_format_7zip_has_encrypted_entries);
@@ -451,7 +458,7 @@ archive_read_support_format_7zip_capabilities(struct archive_read * a)
 
 
 static int
-archive_read_format_7zip_has_encrypted_entries(struct archive_read *_a)
+archive_read_format_7zip_has_encrypted_entries(struct archive_read * _a)
 {
 	if (_a && _a->format) {
 		struct _7zip * zip = (struct _7zip *)_a->format->data;
@@ -527,7 +534,7 @@ check_7zip_header_in_sfx(const char *p)
 		 * Magic Code, so we should do this in order not to
 		 * make a mis-detection.
 		 */
-		if (crc32(0, (const unsigned char *)p + 12, 20)
+		if (crc32(0, (const unsigned char *)(void *)p + 12, 20)
 			!= archive_le32dec(p + 8))
 			return (6);
 		/* Hit the header! */
@@ -613,7 +620,7 @@ archive_read_format_7zip_read_header(struct archive_read *a,
 	struct _7zip *zip = (struct _7zip *)a->format->data;
 	struct _7zip_entry *zip_entry;
 	int r, ret = ARCHIVE_OK;
-	struct _7z_folder *folder = 0;
+	struct _7z_folder *folder = NULL;
 	uint64_t fidx = 0;
 
 	/*
@@ -689,7 +696,7 @@ archive_read_format_7zip_read_header(struct archive_read *a,
 	}
 
 	if (archive_entry_copy_pathname_l(entry,
-	    (const char *)zip_entry->utf16name,
+	    (const char *)(void *)zip_entry->utf16name,
 	    zip_entry->name_len, zip->sconv) != 0) {
 		if (errno == ENOMEM) {
 			archive_set_error(&a->archive, ENOMEM,
@@ -768,7 +775,7 @@ archive_read_format_7zip_read_header(struct archive_read *a,
 		} else {
 			symname[symsize] = '\0';
 			archive_entry_copy_symlink(entry,
-			    (const char *)symname);
+			    (const char *)(void *)symname);
 		}
 		free(symname);
 		archive_entry_set_size(entry, 0);
@@ -979,7 +986,7 @@ static void *
 ppmd_alloc(void *p, size_t size)
 {
 	(void)p;
-	return malloc(size);
+	return (CPpmd7 *)malloc(size);
 }
 static void
 ppmd_free(void *p, void *address)
@@ -1429,9 +1436,9 @@ decompress(struct archive_read *a, struct _7zip *zip,
 #endif
 #if defined(HAVE_BZLIB_H) && defined(BZ_CONFIG_ERROR)
 	case _7Z_BZ2:
-		zip->bzstream.next_in = (char *)(uintptr_t)t_next_in;
+		zip->bzstream.next_in = (char *)t_next_in;
 		zip->bzstream.avail_in = t_avail_in;
-		zip->bzstream.next_out = (char *)(uintptr_t)t_next_out;
+		zip->bzstream.next_out = (char *)t_next_out;
 		zip->bzstream.avail_out = t_avail_out;
 		r = BZ2_bzDecompress(&(zip->bzstream));
 		switch (r) {
@@ -1462,7 +1469,7 @@ decompress(struct archive_read *a, struct _7zip *zip,
 #endif
 #ifdef HAVE_ZLIB_H
 	case _7Z_DEFLATE:
-		zip->stream.next_in = (Bytef *)(uintptr_t)t_next_in;
+		zip->stream.next_in = (Bytef *)t_next_in;
 		zip->stream.avail_in = (uInt)t_avail_in;
 		zip->stream.next_out = t_next_out;
 		zip->stream.avail_out = (uInt)t_avail_out;

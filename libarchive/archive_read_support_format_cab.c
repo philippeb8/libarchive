@@ -47,6 +47,57 @@
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_endian.h"
+#include "archive_entry_private.h"
+
+
+struct lzx_pos_tbl {
+        int		 base;
+        int		 footer_bits;
+};
+
+/*
+    * Bit stream reader.
+    */
+struct lzx_br {
+#define CACHE_TYPE		uint64_t
+#define CACHE_BITS		(8 * sizeof(CACHE_TYPE))
+        /* Cache buffer. */
+        CACHE_TYPE	 cache_buffer;
+        /* Indicates how many bits avail in cache_buffer. */
+        int		 cache_avail;
+        unsigned char	 odd;
+        char		 have_odd;
+};
+
+/*
+    * Huffman coding.
+    */
+struct htree_t {
+        uint16_t left;
+        uint16_t right;
+};
+
+struct huffman {
+        int		 len_size;
+        int		 freq[17];
+        unsigned char	*bitlen;
+
+        /*
+            * Use a index table. It's faster than searching a huffman
+            * coding tree, which is a binary tree. But a use of a large
+            * index table causes L1 cache read miss many times.
+            */
+#define HTBL_BITS	10
+        int		 max_bits;
+        int		 shift_bits;
+        int		 tbl_bits;
+        int		 tree_used;
+        int		 tree_avail;
+        /* Direct access table. */
+        uint16_t	*tbl;
+        /* Binary tree table for extra bits over the direct access. */
+        struct htree_t  *tree;
+};
 
 
 struct lzx_dec {
@@ -85,51 +136,16 @@ struct lzx_dec {
 	int			 position_slot;
 	int			 offset_bits;
 
-	struct lzx_pos_tbl {
-		int		 base;
-		int		 footer_bits;
-	}			*pos_tbl;
+	struct lzx_pos_tbl      *pos_tbl;
 	/*
 	 * Bit stream reader.
 	 */
-	struct lzx_br {
-#define CACHE_TYPE		uint64_t
-#define CACHE_BITS		(8 * sizeof(CACHE_TYPE))
-	 	/* Cache buffer. */
-		CACHE_TYPE	 cache_buffer;
-		/* Indicates how many bits avail in cache_buffer. */
-		int		 cache_avail;
-		unsigned char	 odd;
-		char		 have_odd;
-	} br;
+	struct lzx_br            br;
 
 	/*
 	 * Huffman coding.
 	 */
-	struct huffman {
-		int		 len_size;
-		int		 freq[17];
-		unsigned char	*bitlen;
-
-		/*
-		 * Use a index table. It's faster than searching a huffman
-		 * coding tree, which is a binary tree. But a use of a large
-		 * index table causes L1 cache read miss many times.
-		 */
-#define HTBL_BITS	10
-		int		 max_bits;
-		int		 shift_bits;
-		int		 tbl_bits;
-		int		 tree_used;
-		int		 tree_avail;
-		/* Direct access table. */
-		uint16_t	*tbl;
-		/* Binary tree table for extra bits over the direct access. */
-		struct htree_t {
-			uint16_t left;
-			uint16_t right;
-		}		*tree;
-	}			 at, lt, mt, pt;
+	struct huffman           at, lt, mt, pt;
 
 	int			 loop;
 	int			 error;
@@ -260,8 +276,8 @@ struct cfheader {
 	uint16_t		 setid;
 	uint16_t		 cabinet;
 	/* Version number. */
-	unsigned char		 major;
-	unsigned char		 minor;
+	unsigned char		 majorv;
+	unsigned char		 minorv;
 	unsigned char		 cffolder;
 	unsigned char		 cfdata;
 	/* All folders in a cabinet. */
@@ -358,7 +374,7 @@ static int	lzx_decode_huffman_tree(struct huffman *, unsigned, int);
 int
 archive_read_support_format_cab(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct cab *cab;
 	int r;
 
@@ -382,10 +398,10 @@ archive_read_support_format_cab(struct archive *_a)
 	    archive_read_format_cab_read_header,
 	    archive_read_format_cab_read_data,
 	    archive_read_format_cab_read_data_skip,
-	    NULL,
+	    0,
 	    archive_read_format_cab_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 
 	if (r != ARCHIVE_OK)
 		free(cab);
@@ -667,8 +683,8 @@ cab_read_header(struct archive_read *a)
 	}
 	hd->total_bytes = archive_le32dec(p + CFHEADER_cbCabinet);
 	hd->files_offset = archive_le32dec(p + CFHEADER_coffFiles);
-	hd->minor = p[CFHEADER_versionMinor];
-	hd->major = p[CFHEADER_versionMajor];
+	hd->minorv = p[CFHEADER_versionMinor];
+	hd->majorv = p[CFHEADER_versionMajor];
 	hd->folder_count = archive_le16dec(p + CFHEADER_cFolders);
 	if (hd->folder_count == 0)
 		goto invalid;
@@ -1005,7 +1021,7 @@ archive_read_format_cab_read_header(struct archive_read *a,
 
 	/* Set up a more descriptive format name. */
 	sprintf(cab->format_name, "CAB %d.%d (%s)",
-	    hd->major, hd->minor, cab->entry_cffolder->compname);
+	    hd->majorv, hd->minorv, cab->entry_cffolder->compname);
 	a->archive.archive_format_name = cab->format_name;
 
 	return (err);
@@ -1488,7 +1504,7 @@ cab_read_ahead_cfdata_deflate(struct archive_read *a, ssize_t *avail)
 		 * next_in pointer, only reads it).  The result: this ugly
 		 * cast to remove 'const'.
 		 */
-		cab->stream.next_in = (Bytef *)(uintptr_t)d;
+		cab->stream.next_in = (Bytef *)d;
 		cab->stream.avail_in = (uInt)bytes_avail;
 		cab->stream.total_in = 0;
 
@@ -3169,7 +3185,8 @@ lzx_make_huffman_table(struct huffman *hf)
 {
 	uint16_t *tbl;
 	const unsigned char *bitlen;
-	int bitptn[17], weight[17];
+	int bitptn[17];
+        int weight[17];
 	int i, maxbits = 0, ptn, tbl_size, w;
 	int diffbits, len_avail;
 

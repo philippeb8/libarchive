@@ -63,6 +63,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#define __LIBARCHIVE_BUILD 1
+#include "archive_private.h"
+#include "archive_read_private.h"
+#include "archive_entry_private.h"
+#include "archive_write_disk_private.h"
 
 static void	errmsg(const char *);
 static void	extract(const char *filename, int do_extract, int flags);
@@ -75,7 +80,7 @@ static void	warn(const char *, const char *);
 static int verbose = 0;
 
 int
-main(int argc, const char **argv)
+main(int argc, char **argv)
 {
 	const char *filename = NULL;
 	int compress, flags, mode, opt;
@@ -136,12 +141,16 @@ static void
 extract(const char *filename, int do_extract, int flags)
 {
 	struct archive *a;
+	struct archive_read *ar;
+	struct archive_write_disk *aw;
 	struct archive *ext;
 	struct archive_entry *entry;
 	int r;
 
-	a = archive_read_new();
-	ext = archive_write_disk_new();
+        ar = archive_read_new();
+	a = & ar->archive;
+        aw = archive_write_disk_new();
+	ext = & aw->archive;
 	archive_write_disk_set_options(ext, flags);
 	/*
 	 * Note: archive_write_disk_set_standard_lookup() is useful
@@ -157,10 +166,11 @@ extract(const char *filename, int do_extract, int flags)
 	 */
 	if (filename != NULL && strcmp(filename, "-") == 0)
 		filename = NULL;
-	if ((r = archive_read_open_filename(a, filename, 10240)))
+
+        if ((r = archive_read_open_filename(a, filename, 10240)))
 		fail("archive_read_open_filename()",
 		    archive_error_string(a), r);
-	for (;;) {
+        for (;;) {
 		r = archive_read_next_header(a, &entry);
 		if (r == ARCHIVE_EOF)
 			break;

@@ -821,15 +821,18 @@ append_entry(char **p, const char *prefix, int tag,
  * indicate the type that should be used for any entries not
  * explicitly marked as "default:".
  */
+struct archive_acl_parse_w_range {
+        const wchar_t *start;
+        const wchar_t *end;
+};
+
 int
 archive_acl_parse_w(struct archive_acl *acl,
     const wchar_t *text, int default_type)
 {
-	struct {
-		const wchar_t *start;
-		const wchar_t *end;
-	} field[4], name;
-
+        struct archive_acl_parse_w_range field[4];
+        struct archive_acl_parse_w_range name;
+        
 	int fields, n;
 	int type, tag, permset, id;
 	wchar_t sep;
@@ -1051,14 +1054,17 @@ prefix_w(const wchar_t *start, const wchar_t *end, const wchar_t *test)
  * indicate the type that should be used for any entries not
  * explicitly marked as "default:".
  */
+struct archive_acl_parse_l_range {
+        const char *start;
+        const char *end;
+};
+
 int
 archive_acl_parse_l(struct archive_acl *acl,
     const char *text, int default_type, struct archive_string_conv *sc)
 {
-	struct {
-		const char *start;
-		const char *end;
-	} field[4], name;
+	struct archive_acl_parse_l_range field[4];
+        struct archive_acl_parse_l_range name;
 
 	int fields, n, r, ret = ARCHIVE_OK;
 	int type, tag, permset, id;

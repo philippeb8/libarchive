@@ -45,6 +45,7 @@
 #include "archive_ppmd7_private.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 /* RAR signature, also known as the mark header */
 #define RAR_SIGNATURE "\x52\x61\x72\x21\x1A\x07\x00"
@@ -207,6 +208,20 @@ struct data_block_offsets
   int64_t end_offset;
 };
 
+/*
+* Bit stream reader.
+*/
+struct rar_br {
+#define CACHE_TYPE	uint64_t
+#define CACHE_BITS	(8 * sizeof(CACHE_TYPE))
+  /* Cache buffer. */
+  CACHE_TYPE		 cache_buffer;
+  /* Indicates how many bits avail in cache_buffer. */
+  int			 cache_avail;
+  ssize_t		 avail_in;
+  const unsigned char *next_in;
+};
+
 struct rar
 {
   /* Entries from main RAR header */
@@ -296,16 +311,7 @@ struct rar
   /*
    * Bit stream reader.
    */
-  struct rar_br {
-#define CACHE_TYPE	uint64_t
-#define CACHE_BITS	(8 * sizeof(CACHE_TYPE))
-    /* Cache buffer. */
-    CACHE_TYPE		 cache_buffer;
-    /* Indicates how many bits avail in cache_buffer. */
-    int			 cache_avail;
-    ssize_t		 avail_in;
-    const unsigned char *next_in;
-  } br;
+  struct rar_br  br;
 
   /*
    * Custom field to denote that this archive contains encrypted entries
@@ -608,7 +614,7 @@ static void *
 ppmd_alloc(void *p, size_t size)
 {
   (void)p;
-  return malloc(size);
+  return (CPpmd7 *)malloc(size);
 }
 static void
 ppmd_free(void *p, void *address)
@@ -640,7 +646,7 @@ ppmd_read(void *p)
 int
 archive_read_support_format_rar(struct archive *_a)
 {
-  struct archive_read *a = (struct archive_read *)_a;
+  struct archive_read *a = _containerof(_a, struct archive_read, archive);
   struct rar *rar;
   int r;
 
@@ -688,7 +694,7 @@ archive_read_support_format_rar_capabilities(struct archive_read * a)
 }
 
 static int
-archive_read_format_rar_has_encrypted_entries(struct archive_read *_a)
+archive_read_format_rar_has_encrypted_entries(struct archive_read * _a)
 {
 	if (_a && _a->format) {
 		struct rar * rar = (struct rar *)_a->format->data;
@@ -919,7 +925,7 @@ archive_read_format_rar_read_header(struct archive_read *a,
         return (ARCHIVE_FATAL);
       }
 
-      crc32_val = crc32(0, (const unsigned char *)p + 2, (unsigned)skip - 2);
+      crc32_val = crc32(0, (const unsigned char *)(void *)p + 2, (unsigned)skip - 2);
       if ((crc32_val & 0xffff) != archive_le16dec(p)) {
         archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
           "Header CRC error");
@@ -974,7 +980,7 @@ archive_read_format_rar_read_header(struct archive_read *a,
 		      return (ARCHIVE_FATAL);
 	      }
 	      p = h;
-	      crc32_val = crc32(crc32_val, (const unsigned char *)p, (unsigned)did_read);
+	      crc32_val = crc32(crc32_val, (const unsigned char *)(void *)p, (unsigned)did_read);
 	      __archive_read_consume(a, did_read);
 	      skip -= did_read;
       }
@@ -1306,7 +1312,7 @@ read_header(struct archive_read *a, struct archive_entry *entry,
       "Invalid header size");
     return (ARCHIVE_FATAL);
   }
-  crc32_val = crc32(0, (const unsigned char *)p + 2, 7 - 2);
+  crc32_val = crc32(0, (const unsigned char *)(void *)p + 2, 7 - 2);
   __archive_read_consume(a, 7);
 
   if (!(rar->file_flags & FHD_SOLID))
@@ -2063,7 +2069,8 @@ static int
 parse_codes(struct archive_read *a)
 {
   int i, j, val, n, r;
-  unsigned char bitlengths[MAX_SYMBOLS], zerocount, ppmd_flags;
+  unsigned char bitlengths[MAX_SYMBOLS];
+  unsigned char zerocount, ppmd_flags;
   unsigned int maxorder;
   struct huffman_code precode;
   struct rar *rar = (struct rar *)(a->format->data);
@@ -2558,7 +2565,7 @@ add_value(struct archive_read *a, struct huffman_code *code, int value,
 static int
 new_node(struct huffman_code *code)
 {
-  void *new_tree;
+  struct huffman_tree_node * new_tree;
   if (code->numallocatedentries == code->numentries) {
     int new_num_entries = 256;
     if (code->numentries > 0) {
@@ -2567,7 +2574,7 @@ new_node(struct huffman_code *code)
     new_tree = realloc(code->tree, new_num_entries * sizeof(*code->tree));
     if (new_tree == NULL)
         return (-1);
-    code->tree = (struct huffman_tree_node *)new_tree;
+    code->tree = new_tree;
     code->numallocatedentries = new_num_entries;
   }
   code->tree[code->numentries].branches[0] = -1;

@@ -52,6 +52,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_mtree.c 2011
 #include "archive_read_private.h"
 #include "archive_string.h"
 #include "archive_pack_dev.h"
+#include "archive_entry_private.h"
 
 #ifndef O_BINARY
 #define	O_BINARY 0
@@ -74,6 +75,23 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_mtree.c 2011
 
 #define	MTREE_HAS_OPTIONAL	0x0800
 #define	MTREE_HAS_NOCHANGE	0x1000 /* FreeBSD specific */
+
+struct links_entry {
+	struct links_entry	*next;
+	struct links_entry	*previous;
+	struct archive_entry	*canonical;
+	struct archive_entry	*entry;
+	size_t			 hash;
+	unsigned int		 links; /* # links not yet seen */
+};
+
+struct archive_entry_linkresolver {
+	struct links_entry	**buckets;
+	struct links_entry	 *spare;
+	unsigned long		  number_entries;
+	size_t			  number_buckets;
+	int			  strategy;
+};
 
 struct mtree_option {
 	struct mtree_option *next;
@@ -216,7 +234,7 @@ free_options(struct mtree_option *head)
 int
 archive_read_support_format_mtree(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct mtree *mtree;
 	int r;
 
@@ -233,7 +251,7 @@ archive_read_support_format_mtree(struct archive *_a)
 	mtree->fd = -1;
 
 	r = __archive_read_register_format(a, mtree, "mtree",
-           mtree_bid, archive_read_format_mtree_options, read_header, read_data, skip, NULL, cleanup, NULL, NULL);
+           mtree_bid, archive_read_format_mtree_options, read_header, read_data, skip, 0, cleanup, 0, 0);
 
 	if (r != ARCHIVE_OK)
 		free(mtree);
@@ -553,7 +571,7 @@ bid_entry(const char *p, ssize_t len, ssize_t nl, int *last_is_path)
 	 * Skip the path-name which is quoted.
 	 */
 	for (;pp < pp_end; ++pp) {
-		if (!safe_char[*(const unsigned char *)pp]) {
+		if (!safe_char[*(const unsigned char *)(void *)pp]) {
 			if (*pp != ' ' && *pp != '\t' && *pp != '\r'
 			    && *pp != '\n')
 				f = 0;
@@ -580,7 +598,7 @@ bid_entry(const char *p, ssize_t len, ssize_t nl, int *last_is_path)
 
 		slash = 0;
 		while (p <= --pb && *pb != ' ' && *pb != '\t') {
-			if (!safe_char[*(const unsigned char *)pb])
+			if (!safe_char[*(const unsigned char *)(void *)pb])
 				return (-1);
 			name_len++;
 			/* The pathname should have a slash in this
@@ -1094,7 +1112,8 @@ parse_file(struct archive_read *a, struct archive_entry *entry,
     struct mtree *mtree, struct mtree_entry *mentry, int *use_next)
 {
 	const char *path;
-	struct stat st_storage, *st;
+	struct stat st_storage;
+        struct stat *st;
 	struct mtree_entry *mp;
 	struct archive_entry *sparse_entry;
 	int r = ARCHIVE_OK, r1, parsed_kws;
@@ -1382,7 +1401,7 @@ parse_device(dev_t *pdev, struct archive *a, char *val)
 		 * Decode and pack it accordingly.
 		 */
 		*dev++ = '\0';
-		if ((pack = pack_find(val)) == NULL) {
+		if ((pack = pack_find(val)) == 0) {
 			archive_set_error(a, ARCHIVE_ERRNO_FILE_FORMAT,
 			    "Unknown format `%s'", val);
 			return ARCHIVE_WARN;

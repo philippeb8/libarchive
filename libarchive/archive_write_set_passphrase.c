@@ -34,7 +34,7 @@ __FBSDID("$FreeBSD$");
 int
 archive_write_set_passphrase(struct archive *_a, const char *p)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC, ARCHIVE_STATE_NEW,
 		"archive_write_set_passphrase");
@@ -59,7 +59,7 @@ int
 archive_write_set_passphrase_callback(struct archive *_a, void *client_data,
     archive_passphrase_callback *cb)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC, ARCHIVE_STATE_NEW,
 		"archive_write_set_passphrase_callback");
@@ -77,7 +77,7 @@ __archive_write_get_passphrase(struct archive_write *a)
 	if (a->passphrase != NULL)
 		return (a->passphrase);
 
-	if (a->passphrase_callback != NULL) {
+	if (a->passphrase_callback != 0) {
 		const char *p;
 		p = a->passphrase_callback(&a->archive,
 		    a->passphrase_client_data);

@@ -39,7 +39,7 @@ __FBSDID("$FreeBSD$");
 
 /* A table that maps filter codes to functions. */
 static
-struct { int code; int (*setter)(struct archive *); } codes[] =
+struct codes_ { int code; int (*setter)(struct archive *); } codes[] =
 {
 	{ ARCHIVE_FILTER_NONE,		archive_write_add_filter_none },
 	{ ARCHIVE_FILTER_GZIP,		archive_write_add_filter_gzip },
@@ -53,7 +53,7 @@ struct { int code; int (*setter)(struct archive *); } codes[] =
 	{ ARCHIVE_FILTER_LZOP,		archive_write_add_filter_lzip },
 	{ ARCHIVE_FILTER_UU,		archive_write_add_filter_uuencode },
 	{ ARCHIVE_FILTER_XZ,		archive_write_add_filter_xz },
-	{ -1,			NULL }
+	{ -1,			0 }
 };
 
 int

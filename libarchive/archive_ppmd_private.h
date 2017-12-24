@@ -12,6 +12,7 @@ This code is based on PPMd var.H (2001): Dmitry Shkarin : Public domain */
 #include <stddef.h>
 
 #include "archive_read_private.h"
+#include "archive_write_private.h"
 
 /*** Begin defined in Types.h ***/
 
@@ -57,20 +58,20 @@ typedef int Bool;
 
 /* The following interfaces use first parameter as pointer to structure */
 
-typedef struct
+typedef struct IByteIn_
 {
   struct archive_read *a;
   Byte (*Read)(void *p); /* reads one byte, returns 0 in case of EOF or error */
 } IByteIn;
 
-typedef struct
+typedef struct IByteOut_
 {
   struct archive_write *a;
   void (*Write)(void *p, Byte b);
 } IByteOut;
 
 
-typedef struct
+typedef struct ISzAlloc_
 {
   void *(*Alloc)(void *p, size_t size);
   void (*Free)(void *p, void *address); /* address can be 0 */
@@ -109,7 +110,7 @@ typedef struct
 #define PPMD_NUM_INDEXES (PPMD_N1 + PPMD_N2 + PPMD_N3 + PPMD_N4)
 
 /* SEE-contexts for PPM-contexts with masked symbols */
-typedef struct
+typedef struct CPpmd_See_
 {
   UInt16 Summ; /* Freq */
   Byte Shift;  /* Speed of Freq change; low Shift is for fast change */
@@ -119,7 +120,7 @@ typedef struct
 #define Ppmd_See_Update(p)  if ((p)->Shift < PPMD_PERIOD_BITS && --(p)->Count == 0) \
     { (p)->Summ <<= 1; (p)->Count = (Byte)(3 << (p)->Shift++); }
 
-typedef struct
+typedef struct CPpmd_State_
 {
   Byte Symbol;
   Byte Freq;

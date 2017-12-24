@@ -49,6 +49,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_disk_set_standard_lookup.c
 #include "archive_private.h"
 #include "archive_read_private.h"
 #include "archive_write_disk_private.h"
+#include "archive_entry_private.h"
 
 struct bucket {
 	char	*name;
@@ -239,10 +240,10 @@ lookup_uid(void *private_data, const char *uname, int64_t uid)
 }
 
 static void
-cleanup(void *private)
+cleanup(void *priv)
 {
 	size_t i;
-	struct bucket *cache = (struct bucket *)private;
+	struct bucket *cache = (struct bucket *)priv;
 
 	for (i = 0; i < cache_size; i++)
 		free(cache[i].name);

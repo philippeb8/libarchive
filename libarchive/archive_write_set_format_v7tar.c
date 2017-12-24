@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 struct v7tar {
 	uint64_t	entry_bytes_remaining;
@@ -143,14 +144,14 @@ static int	format_header_v7tar(struct archive_write *, char h[512],
 int
 archive_write_set_format_v7tar(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct v7tar *v7tar;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_v7tar");
 
 	/* If someone else was already registered, unregister them. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	/* Basic internal sanity test. */

@@ -47,6 +47,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #ifdef HAVE_ZLIB_H
 struct private_data {
@@ -90,7 +91,7 @@ archive_read_support_compression_gzip(struct archive *a)
 int
 archive_read_support_filter_gzip(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -103,8 +104,8 @@ archive_read_support_filter_gzip(struct archive *_a)
 	bidder->name = "gzip";
 	bidder->bid = gzip_bidder_bid;
 	bidder->init = gzip_bidder_init;
-	bidder->options = NULL;
-	bidder->free = NULL; /* No data, so no cleanup necessary. */
+	bidder->options = 0;
+	bidder->free = 0; /* No data, so no cleanup necessary. */
 	/* Signal the extent of gzip support with the return value here. */
 #if HAVE_ZLIB_H
 	return (ARCHIVE_OK);
@@ -298,7 +299,7 @@ consume_header(struct archive_read_filter *self)
 	state->crc = crc32(0L, NULL, 0);
 
 	/* Initialize compression library. */
-	state->stream.next_in = (unsigned char *)(uintptr_t)
+	state->stream.next_in = (unsigned char *)
 	    __archive_read_filter_ahead(self->upstream, 1, &avail);
 	state->stream.avail_in = (uInt)avail;
 	ret = inflateInit2(&(state->stream),
@@ -400,7 +401,7 @@ gzip_filter_read(struct archive_read_filter *self, const void **p)
 		/* Peek at the next available data. */
 		/* ZLib treats stream.next_in as const but doesn't declare
 		 * it so, hence this ugly cast. */
-		state->stream.next_in = (unsigned char *)(uintptr_t)
+		state->stream.next_in = (unsigned char *)
 		    __archive_read_filter_ahead(self->upstream, 1, &avail_in);
 		if (state->stream.next_in == NULL) {
 			archive_set_error(&self->archive->archive,

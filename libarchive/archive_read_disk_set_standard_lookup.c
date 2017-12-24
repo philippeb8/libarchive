@@ -46,6 +46,8 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_disk_set_standard_lookup.c 
 #endif
 
 #include "archive.h"
+#include "archive_private.h"
+#include "archive_entry_private.h"
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
 int
@@ -59,6 +61,11 @@ archive_read_disk_set_standard_lookup(struct archive *a)
 
 static const char * const NO_NAME = "(noname)";
 
+struct cache_ {
+        id_t id;
+        const char *name;
+};
+
 struct name_cache {
 	struct archive *archive;
 	char   *buff;
@@ -66,10 +73,7 @@ struct name_cache {
 	int	probes;
 	int	hits;
 	size_t	size;
-	struct {
-		id_t id;
-		const char *name;
-	} cache[name_cache_size];
+	struct cache_ cache[name_cache_size];
 };
 
 static const char *	lookup_gname(void *, int64_t);
@@ -128,7 +132,7 @@ cleanup(void *data)
 		for (i = 0; i < cache->size; i++) {
 			if (cache->cache[i].name != NULL &&
 			    cache->cache[i].name != NO_NAME)
-				free((void *)(uintptr_t)cache->cache[i].name);
+				free(cache->cache[i].name);
 		}
 		free(cache->buff);
 		free(cache);
@@ -157,7 +161,7 @@ lookup_name(struct name_cache *cache,
 			return (cache->cache[slot].name);
 		}
 		if (cache->cache[slot].name != NO_NAME)
-			free((void *)(uintptr_t)cache->cache[slot].name);
+			free(cache->cache[slot].name);
 		cache->cache[slot].name = NULL;
 	}
 

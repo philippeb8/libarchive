@@ -57,6 +57,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #if (!defined(HAVE_LIBXML_XMLREADER_H) && \
      !defined(HAVE_BSDXML_H) && !defined(HAVE_EXPAT_H)) ||\
@@ -73,7 +74,7 @@ __FBSDID("$FreeBSD$");
 int
 archive_read_support_format_xar(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_read_support_format_xar");
 
@@ -88,7 +89,7 @@ archive_read_support_format_xar(struct archive *_a)
 /* #define DEBUG_PRINT_TOC 1 */
 #if DEBUG_PRINT_TOC
 #define PRINT_TOC(d, outbytes)	do {				\
-	unsigned char *x = (unsigned char *)(uintptr_t)d;	\
+	unsigned char *x = (unsigned char *)d;	\
 	unsigned char c = x[outbytes-1];			\
 	x[outbytes - 1] = 0;					\
 	fprintf(stderr, "%s", x);				\
@@ -446,7 +447,7 @@ int
 archive_read_support_format_xar(struct archive *_a)
 {
 	struct xar *xar;
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	int r;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -1593,7 +1594,7 @@ decompress(struct archive_read *a, const void **buff, size_t *outbytes,
 
 	xar = (struct xar *)(a->format->data);
 	avail_in = *used;
-	outbuff = (void *)(uintptr_t)*buff;
+	outbuff = (void *)*buff;
 	if (outbuff == NULL) {
 		if (xar->outbuff == NULL) {
 			xar->outbuff = malloc(OUTBUFF_SIZE);
@@ -1610,7 +1611,7 @@ decompress(struct archive_read *a, const void **buff, size_t *outbytes,
 		avail_out = *outbytes;
 	switch (xar->rd_encoding) {
 	case GZIP:
-		xar->stream.next_in = (Bytef *)(uintptr_t)b;
+		xar->stream.next_in = (Bytef *)b;
 		xar->stream.avail_in = avail_in;
 		xar->stream.next_out = (unsigned char *)outbuff;
 		xar->stream.avail_out = avail_out;
@@ -1629,7 +1630,7 @@ decompress(struct archive_read *a, const void **buff, size_t *outbytes,
 		break;
 #if defined(HAVE_BZLIB_H) && defined(BZ_CONFIG_ERROR)
 	case BZIP2:
-		xar->bzstream.next_in = (char *)(uintptr_t)b;
+		xar->bzstream.next_in = (char *)b;
 		xar->bzstream.avail_in = avail_in;
 		xar->bzstream.next_out = (char *)outbuff;
 		xar->bzstream.avail_out = avail_out;
@@ -1687,7 +1688,7 @@ decompress(struct archive_read *a, const void **buff, size_t *outbytes,
 		break;
 #elif defined(HAVE_LZMADEC_H) && defined(HAVE_LIBLZMADEC)
 	case LZMA:
-		xar->lzstream.next_in = (unsigned char *)(uintptr_t)b;
+		xar->lzstream.next_in = (unsigned char *)b;
 		xar->lzstream.avail_in = avail_in;
 		xar->lzstream.next_out = (unsigned char *)outbuff;
 		xar->lzstream.avail_out = avail_out;

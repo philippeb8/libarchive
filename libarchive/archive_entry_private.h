@@ -70,6 +70,38 @@ struct ae_sparse {
  *
  * TODO: Design a good API for handling sparse files.
  */
+struct aest {
+        int64_t		aest_atime;
+        uint32_t	aest_atime_nsec;
+        int64_t		aest_ctime;
+        uint32_t	aest_ctime_nsec;
+        int64_t		aest_mtime;
+        uint32_t	aest_mtime_nsec;
+        int64_t		aest_birthtime;
+        uint32_t	aest_birthtime_nsec;
+        int64_t		aest_gid;
+        int64_t		aest_ino;
+        uint32_t	aest_nlink;
+        uint64_t	aest_size;
+        int64_t		aest_uid;
+        /*
+            * Because converting between device codes and
+            * major/minor values is platform-specific and
+            * inherently a bit risky, we only do that conversion
+            * lazily.  That way, we will do a better job of
+            * preserving information in those cases where no
+            * conversion is actually required.
+            */
+        int		aest_dev_is_broken_down;
+        dev_t		aest_dev;
+        dev_t		aest_devmajor;
+        dev_t		aest_devminor;
+        int		aest_rdev_is_broken_down;
+        dev_t		aest_rdev;
+        dev_t		aest_rdevmajor;
+        dev_t		aest_rdevminor;
+};
+
 struct archive_entry {
 	struct archive *archive;
 
@@ -96,37 +128,7 @@ struct archive_entry {
 	void *stat;
 	int  stat_valid; /* Set to 0 whenever a field in aest changes. */
 
-	struct aest {
-		int64_t		aest_atime;
-		uint32_t	aest_atime_nsec;
-		int64_t		aest_ctime;
-		uint32_t	aest_ctime_nsec;
-		int64_t		aest_mtime;
-		uint32_t	aest_mtime_nsec;
-		int64_t		aest_birthtime;
-		uint32_t	aest_birthtime_nsec;
-		int64_t		aest_gid;
-		int64_t		aest_ino;
-		uint32_t	aest_nlink;
-		uint64_t	aest_size;
-		int64_t		aest_uid;
-		/*
-		 * Because converting between device codes and
-		 * major/minor values is platform-specific and
-		 * inherently a bit risky, we only do that conversion
-		 * lazily.  That way, we will do a better job of
-		 * preserving information in those cases where no
-		 * conversion is actually required.
-		 */
-		int		aest_dev_is_broken_down;
-		dev_t		aest_dev;
-		dev_t		aest_devmajor;
-		dev_t		aest_devminor;
-		int		aest_rdev_is_broken_down;
-		dev_t		aest_rdev;
-		dev_t		aest_rdevmajor;
-		dev_t		aest_rdevminor;
-	} ae_stat;
+	struct aest ae_stat;
 
 	int ae_set; /* bitmap of fields that are currently set */
 #define	AE_SET_HARDLINK	1

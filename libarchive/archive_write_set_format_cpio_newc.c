@@ -44,6 +44,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_write_set_format_cpio_newc.c 201
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 static ssize_t	archive_write_newc_data(struct archive_write *,
 		    const void *buff, size_t s);
@@ -106,14 +107,14 @@ struct cpio {
 int
 archive_write_set_format_cpio_newc(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct cpio *cpio;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_cpio_newc");
 
 	/* If someone else was already registered, unregister them. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	cpio = (struct cpio *)malloc(sizeof(*cpio));

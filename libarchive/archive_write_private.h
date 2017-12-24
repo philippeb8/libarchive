@@ -128,6 +128,19 @@ struct archive_write {
 	void		*passphrase_client_data;
 };
 
+struct archive_write_program_data {
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	HANDLE		 child;
+#else
+	pid_t		 child;
+#endif
+	int		 child_stdin, child_stdout;
+
+	char		*child_buf;
+	size_t		 child_buf_len, child_buf_avail;
+	char		*program_name;
+};
+
 /*
  * Utility function to format a USTAR header into a buffer.  If
  * "strict" is set, this tries to create the absolutely most portable

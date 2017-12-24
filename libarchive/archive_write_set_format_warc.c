@@ -63,7 +63,7 @@ static const char warcinfo[] =
     "software: libarchive/" ARCHIVE_VERSION_ONLY_STRING "\r\n"
     "format: WARC file version 1.0\r\n";
 
-typedef enum {
+typedef enum warc_type_t_ {
 	WT_NONE,
 	/* warcinfo */
 	WT_INFO,
@@ -85,7 +85,7 @@ typedef enum {
 	LAST_WT
 } warc_type_t;
 
-typedef struct {
+typedef struct warc_essential_hdr_t_ {
 	warc_type_t type;
 	const char *tgturi;
 	const char *recid;
@@ -95,7 +95,7 @@ typedef struct {
 	uint64_t cntlen;
 } warc_essential_hdr_t;
 
-typedef struct {
+typedef struct warc_uuid_t_ {
 	unsigned int u[4U];
 } warc_uuid_t;
 
@@ -117,14 +117,14 @@ static int _gen_uuid(warc_uuid_t *tgt);
 int
 archive_write_set_format_warc(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct warc_s *w;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_warc");
 
 	/* If another format was already registered, unregister it. */
-	if (a->format_free != NULL) {
+	if (a->format_free != 0) {
 		(a->format_free)(a);
 	}
 
@@ -137,7 +137,7 @@ archive_write_set_format_warc(struct archive *_a)
 	/* by default we're emitting a file wide header */
 	w->omit_warcinfo = 0U;
 	/* obtain current time for date fields */
-	w->now = time(NULL);
+	w->now = time((time_t *)NULL);
 	/* reset file type info */
 	w->typ = 0;
 	/* also initialise our rng */
@@ -354,8 +354,8 @@ static ssize_t
 _popul_ehdr(struct archive_string *tgt, size_t tsz, warc_essential_hdr_t hdr)
 {
 	static const char _ver[] = "WARC/1.0\r\n";
-	static const char *_typ[LAST_WT] = {
-		NULL, "warcinfo", "metadata", "resource", NULL
+	static const char *_typ[] = {
+		(const char *)NULL, "warcinfo", "metadata", "resource", (const char *)NULL
 	};
 	char std_uuid[48U];
 

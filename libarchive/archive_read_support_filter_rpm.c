@@ -36,21 +36,24 @@
 #include "archive_endian.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
+
+enum state_ {
+        ST_LEAD,	/* Skipping 'Lead' section. */
+        ST_HEADER,	/* Reading 'Header' section;
+                            * first 16 bytes. */
+        ST_HEADER_DATA,	/* Skipping 'Header' section. */
+        ST_PADDING,	/* Skipping padding data after the
+                            * 'Header' section. */
+        ST_ARCHIVE	/* Reading 'Archive' section. */
+};
 
 struct rpm {
 	int64_t		 total_in;
 	size_t		 hpos;
 	size_t		 hlen;
 	unsigned char	 header[16];
-	enum {
-		ST_LEAD,	/* Skipping 'Lead' section. */
-		ST_HEADER,	/* Reading 'Header' section;
-				 * first 16 bytes. */
-		ST_HEADER_DATA,	/* Skipping 'Header' section. */
-		ST_PADDING,	/* Skipping padding data after the
-				 * 'Header' section. */
-		ST_ARCHIVE	/* Reading 'Archive' section. */
-	}		 state;
+	enum state_      state;
 	int		 first_header;
 };
 #define RPM_LEAD_SIZE	96	/* Size of 'Lead' section. */
@@ -75,7 +78,7 @@ archive_read_support_compression_rpm(struct archive *a)
 int
 archive_read_support_filter_rpm(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -88,8 +91,8 @@ archive_read_support_filter_rpm(struct archive *_a)
 	bidder->name = "rpm";
 	bidder->bid = rpm_bidder_bid;
 	bidder->init = rpm_bidder_init;
-	bidder->options = NULL;
-	bidder->free = NULL;
+	bidder->options = 0;
+	bidder->free = 0;
 	return (ARCHIVE_OK);
 }
 
@@ -141,7 +144,7 @@ rpm_bidder_init(struct archive_read_filter *self)
 	self->code = ARCHIVE_FILTER_RPM;
 	self->name = "rpm";
 	self->read = rpm_filter_read;
-	self->skip = NULL; /* not supported */
+	self->skip = 0; /* not supported */
 	self->close = rpm_filter_close;
 
 	rpm = (struct rpm *)calloc(sizeof(*rpm), 1);

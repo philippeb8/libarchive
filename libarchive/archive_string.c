@@ -65,61 +65,15 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_string.c 201095 2009-12-28 02:33
 #include "archive_endian.h"
 #include "archive_private.h"
 #include "archive_string.h"
-#include "archive_string_composition.h"
+#include <archive_string_composition.h>
 
 #if !defined(HAVE_WMEMCPY) && !defined(wmemcpy)
-#define wmemcpy(a,b,i)  (wchar_t *)memcpy((a), (b), (i) * sizeof(wchar_t))
+#define wmemcpy(a,b,i)  (wchar_t *)(void *)memcpy((a), (b), (i) * sizeof(wchar_t))
 #endif
 
 #if !defined(HAVE_WMEMMOVE) && !defined(wmemmove)
-#define wmemmove(a,b,i)  (wchar_t *)memmove((a), (b), (i) * sizeof(wchar_t))
+#define wmemmove(a,b,i)  (wchar_t *)(void *)memmove((a), (b), (i) * sizeof(wchar_t))
 #endif
-
-struct archive_string_conv {
-	struct archive_string_conv	*next;
-	char				*from_charset;
-	char				*to_charset;
-	unsigned			 from_cp;
-	unsigned			 to_cp;
-	/* Set 1 if from_charset and to_charset are the same. */
-	int				 same;
-	int				 flag;
-#define SCONV_TO_CHARSET	1	/* MBS is being converted to specified
-					 * charset. */
-#define SCONV_FROM_CHARSET	(1<<1)	/* MBS is being converted from
-					 * specified charset. */
-#define SCONV_BEST_EFFORT 	(1<<2)	/* Copy at least ASCII code. */
-#define SCONV_WIN_CP	 	(1<<3)	/* Use Windows API for converting
-					 * MBS. */
-#define SCONV_UTF8_LIBARCHIVE_2 (1<<4)	/* Incorrect UTF-8 made by libarchive
-					 * 2.x in the wrong assumption. */
-#define SCONV_NORMALIZATION_C	(1<<6)	/* Need normalization to be Form C.
-					 * Before UTF-8 characters are actually
-					 * processed. */
-#define SCONV_NORMALIZATION_D	(1<<7)	/* Need normalization to be Form D.
-					 * Before UTF-8 characters are actually
-					 * processed.
-					 * Currently this only for MAC OS X. */
-#define SCONV_TO_UTF8		(1<<8)	/* "to charset" side is UTF-8. */
-#define SCONV_FROM_UTF8		(1<<9)	/* "from charset" side is UTF-8. */
-#define SCONV_TO_UTF16BE 	(1<<10)	/* "to charset" side is UTF-16BE. */
-#define SCONV_FROM_UTF16BE 	(1<<11)	/* "from charset" side is UTF-16BE. */
-#define SCONV_TO_UTF16LE 	(1<<12)	/* "to charset" side is UTF-16LE. */
-#define SCONV_FROM_UTF16LE 	(1<<13)	/* "from charset" side is UTF-16LE. */
-#define SCONV_TO_UTF16		(SCONV_TO_UTF16BE | SCONV_TO_UTF16LE)
-#define SCONV_FROM_UTF16	(SCONV_FROM_UTF16BE | SCONV_FROM_UTF16LE)
-
-#if HAVE_ICONV
-	iconv_t				 cd;
-	iconv_t				 cd_w;/* Use at archive_mstring on
-				 	       * Windows. */
-#endif
-	/* A temporary buffer for normalization. */
-	struct archive_string		 utftmp;
-	int (*converter[2])(struct archive_string *, const void *, size_t,
-	    struct archive_string_conv *);
-	int				 nconverter;
-};
 
 #define CP_C_LOCALE	0	/* "C" locale only for this file. */
 #define CP_UTF16LE	1200
@@ -252,14 +206,6 @@ archive_wstring_free(struct archive_wstring *as)
 	as->s = NULL;
 }
 
-struct archive_wstring *
-archive_wstring_ensure(struct archive_wstring *as, size_t s)
-{
-	return (struct archive_wstring *)
-		archive_string_ensure((struct archive_string *)as,
-					s * sizeof(wchar_t));
-}
-
 /* Returns NULL on any allocation failure. */
 struct archive_string *
 archive_string_ensure(struct archive_string *as, size_t s)
@@ -307,6 +253,61 @@ archive_string_ensure(struct archive_string *as, size_t s)
 	if (p == NULL) {
 		/* On failure, wipe the string and return NULL. */
 		archive_string_free(as);
+		errno = ENOMEM;/* Make sure errno has ENOMEM. */
+		return (NULL);
+	}
+
+	as->s = p;
+	as->buffer_length = new_length;
+	return (as);
+}
+
+struct archive_wstring *
+archive_wstring_ensure(struct archive_wstring *as, size_t s)
+{
+	wchar_t *p;
+	size_t new_length;
+
+	/* If buffer is already big enough, don't reallocate. */
+	if (as->s && (s <= as->buffer_length))
+		return (as);
+
+	/*
+	 * Growing the buffer at least exponentially ensures that
+	 * append operations are always linear in the number of
+	 * characters appended.  Using a smaller growth rate for
+	 * larger buffers reduces memory waste somewhat at the cost of
+	 * a larger constant factor.
+	 */
+	if (as->buffer_length < 32)
+		/* Start with a minimum 32-character buffer. */
+		new_length = 32;
+	else if (as->buffer_length < 8192)
+		/* Buffers under 8k are doubled for speed. */
+		new_length = as->buffer_length + as->buffer_length;
+	else {
+		/* Buffers 8k and over grow by at least 25% each time. */
+		new_length = as->buffer_length + as->buffer_length / 4;
+		/* Be safe: If size wraps, fail. */
+		if (new_length < as->buffer_length) {
+			/* On failure, wipe the string and return NULL. */
+			archive_wstring_free(as);
+			errno = ENOMEM;/* Make sure errno has ENOMEM. */
+			return (NULL);
+		}
+	}
+	/*
+	 * The computation above is a lower limit to how much we'll
+	 * grow the buffer.  In any case, we have to grow it enough to
+	 * hold the request.
+	 */
+	if (new_length < s)
+		new_length = s;
+	/* Now we can reallocate the buffer. */
+	p = (wchar_t *)realloc(as->s, new_length * sizeof(wchar_t));
+	if (p == NULL) {
+		/* On failure, wipe the string and return NULL. */
+		archive_wstring_free(as);
 		errno = ENOMEM;/* Make sure errno has ENOMEM. */
 		return (NULL);
 	}
@@ -592,7 +593,7 @@ archive_wstring_append_from_mbs(struct archive_wstring *dest,
 
 	memset(&shift_state, 0, sizeof(shift_state));
 #endif
-	if (NULL == archive_wstring_ensure(dest, dest->length + wcs_length + 1))
+	if (archive_wstring_ensure(dest, dest->length + wcs_length + 1) == NULL)
 		return (-1);
 	wcs = dest->s + dest->length;
 	/*
@@ -605,8 +606,8 @@ archive_wstring_append_from_mbs(struct archive_wstring *dest,
 			dest->length = wcs - dest->s;
 			dest->s[dest->length] = L'\0';
 			wcs_length = mbs_length;
-			if (NULL == archive_wstring_ensure(dest,
-			    dest->length + wcs_length + 1))
+			if (archive_wstring_ensure(dest,
+			    dest->length + wcs_length + 1) == NULL)
 				return (-1);
 			wcs = dest->s + dest->length;
 		}
@@ -2019,7 +2020,7 @@ iconv_strncat_in_locale(struct archive_string *as, const void *_p,
 		return (-1);
 
 	cd = sc->cd;
-	itp = (char *)(uintptr_t)_p;
+	itp = (char *)_p;
 	remaining = length;
 	outp = as->s + as->length;
 	avail = as->buffer_length - as->length - to_size;
@@ -2168,7 +2169,7 @@ invalid_mbs(const void *_p, size_t n, struct archive_string_conv *sc)
 	memset(&shift_state, 0, sizeof(shift_state));
 #else
 	/* Clear the shift state before starting. */
-	mbtowc(NULL, NULL, 0);
+	mbtowc(0, 0, 0);
 #endif
 	while (n) {
 		wchar_t wc;
@@ -3211,6 +3212,11 @@ get_nfd(uint32_t *cp1, uint32_t *cp2, uint32_t uc)
 /*
  * Normalize UTF-8 characters to Form D and copy the result.
  */
+struct fdc_ {
+        uint32_t uc;
+        int ccc;
+};
+
 static int
 archive_string_normalize_D(struct archive_string *as, const void *_p,
     size_t len, struct archive_string_conv *sc)
@@ -3279,10 +3285,7 @@ archive_string_normalize_D(struct archive_string *as, const void *_p,
 		const char *ucptr;
 		uint32_t cp1, cp2;
 		int SIndex;
-		struct {
-			uint32_t uc;
-			int ccc;
-		} fdc[FDC_MAX];
+		struct fdc_ fdc[FDC_MAX];
 		int fdi, fdj;
 		int ccc;
 
@@ -3407,7 +3410,7 @@ strncat_from_utf8_libarchive2(struct archive_string *as,
 	memset(&shift_state, 0, sizeof(shift_state));
 #else
 	/* Clear the shift state before starting. */
-	wctomb(NULL, L'\0');
+	wctomb(0, L'\0');
 #endif
 	(void)sc; /* UNUSED */
 	/*

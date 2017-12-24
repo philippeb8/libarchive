@@ -33,6 +33,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 int
 archive_read_append_filter(struct archive *_a, int code)
@@ -41,7 +42,7 @@ archive_read_append_filter(struct archive *_a, int code)
   char str[20];
   struct archive_read_filter_bidder *bidder;
   struct archive_read_filter *filter;
-  struct archive_read *a = (struct archive_read *)_a;
+  struct archive_read *a = _containerof(_a, struct archive_read, archive);
 
   r2 = (ARCHIVE_OK);
   switch (code)
@@ -156,7 +157,7 @@ archive_read_append_filter_program_signature(struct archive *_a,
   int r, number_bidders, i;
   struct archive_read_filter_bidder *bidder;
   struct archive_read_filter *filter;
-  struct archive_read *a = (struct archive_read *)_a;
+  struct archive_read *a = _containerof(_a, struct archive_read, archive);
 
   if (archive_read_support_filter_program_signature(_a, cmd, signature,
     signature_len) != (ARCHIVE_OK))

@@ -43,6 +43,7 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_cpio.c 20116
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 #define	bin_magic_offset 0
 #define	bin_magic_size 2
@@ -220,7 +221,7 @@ static int	record_hardlink(struct archive_read *a,
 int
 archive_read_support_format_cpio(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct cpio *cpio;
 	int r;
 
@@ -242,10 +243,10 @@ archive_read_support_format_cpio(struct archive *_a)
 	    archive_read_format_cpio_read_header,
 	    archive_read_format_cpio_read_data,
 	    archive_read_format_cpio_skip,
-	    NULL,
+	    0,
 	    archive_read_format_cpio_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 
 	if (r != ARCHIVE_OK)
 		free(cpio);

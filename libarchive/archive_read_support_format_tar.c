@@ -44,67 +44,10 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_support_format_tar.c 201161
 #include "archive_entry_locale.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
+#include <archive_read_support_format_tar_private.h>
 
 #define tar_min(a,b) ((a) < (b) ? (a) : (b))
-
-/*
- * Layout of POSIX 'ustar' tar header.
- */
-struct archive_entry_header_ustar {
-	char	name[100];
-	char	mode[8];
-	char	uid[8];
-	char	gid[8];
-	char	size[12];
-	char	mtime[12];
-	char	checksum[8];
-	char	typeflag[1];
-	char	linkname[100];	/* "old format" header ends here */
-	char	magic[6];	/* For POSIX: "ustar\0" */
-	char	version[2];	/* For POSIX: "00" */
-	char	uname[32];
-	char	gname[32];
-	char	rdevmajor[8];
-	char	rdevminor[8];
-	char	prefix[155];
-};
-
-/*
- * Structure of GNU tar header
- */
-struct gnu_sparse {
-	char	offset[12];
-	char	numbytes[12];
-};
-
-struct archive_entry_header_gnutar {
-	char	name[100];
-	char	mode[8];
-	char	uid[8];
-	char	gid[8];
-	char	size[12];
-	char	mtime[12];
-	char	checksum[8];
-	char	typeflag[1];
-	char	linkname[100];
-	char	magic[8];  /* "ustar  \0" (note blank/blank/null at end) */
-	char	uname[32];
-	char	gname[32];
-	char	rdevmajor[8];
-	char	rdevminor[8];
-	char	atime[12];
-	char	ctime[12];
-	char	offset[12];
-	char	longnames[4];
-	char	unused[1];
-	struct gnu_sparse sparse[4];
-	char	isextended[1];
-	char	realsize[12];
-	/*
-	 * Old GNU format doesn't use POSIX 'prefix' field; they use
-	 * the 'L' (longname) entry instead.
-	 */
-};
 
 /*
  * Data specific to this format.
@@ -236,7 +179,7 @@ archive_read_support_format_gnutar(struct archive *a)
 int
 archive_read_support_format_tar(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct tar *tar;
 	int r;
 
@@ -260,10 +203,10 @@ archive_read_support_format_tar(struct archive *_a)
 	    archive_read_format_tar_read_header,
 	    archive_read_format_tar_read_data,
 	    archive_read_format_tar_skip,
-	    NULL,
+	    0,
 	    archive_read_format_tar_cleanup,
-	    NULL,
-	    NULL);
+	    0,
+	    0);
 
 	if (r != ARCHIVE_OK)
 		free(tar);
@@ -326,7 +269,7 @@ archive_read_format_tar_bid(struct archive_read *a, int best_bid)
 		return (0);
 	bid += 48;  /* Checksum is usually 6 octal digits. */
 
-	header = (const struct archive_entry_header_ustar *)h;
+	header = to_archive_entry_header_ustar_ptr(h);
 
 	/* Recognize POSIX formats. */
 	if ((memcmp(header->magic, "ustar\0", 6) == 0)
@@ -710,7 +653,7 @@ tar_read_header(struct archive_read *a, struct tar *tar,
 	}
 
 	/* Determine the format variant. */
-	header = (const struct archive_entry_header_ustar *)h;
+	header = to_archive_entry_header_ustar_ptr(h);
 
 	switch(header->typeflag[0]) {
 	case 'A': /* Solaris tar ACL */
@@ -746,7 +689,7 @@ tar_read_header(struct archive_read *a, struct tar *tar,
 		err = header_pax_extensions(a, tar, entry, h, unconsumed);
 		break;
 	default:
-		gnuheader = (const struct archive_entry_header_gnutar *)h;
+		gnuheader = to_archive_entry_header_gnutar_ptr(h);
 		if (memcmp(gnuheader->magic, "ustar  \0", 8) == 0) {
 			a->archive.archive_format = ARCHIVE_FORMAT_TAR_GNUTAR;
 			a->archive.archive_format_name = "GNU tar format";
@@ -769,7 +712,7 @@ tar_read_header(struct archive_read *a, struct tar *tar,
 	tar_flush_unconsumed(a, unconsumed);
 
 	h = NULL;
-	header = NULL;
+	header = (struct archive_entry_header_ustar *)NULL;
 
 	--tar->header_recursion_depth;
 	/* Yuck.  Apple's design here ends up storing long pathname
@@ -825,8 +768,8 @@ checksum(struct archive_read *a, const void *h)
 	size_t i;
 
 	(void)a; /* UNUSED */
-	bytes = (const unsigned char *)h;
-	header = (const struct archive_entry_header_ustar *)h;
+	bytes = to_unsigned_char_ptr(h);
+	header = to_archive_entry_header_ustar_ptr(h);
 
 	/* Checksum field must hold an octal number */
 	for (i = 0; i < sizeof(header->checksum); ++i) {
@@ -839,7 +782,7 @@ checksum(struct archive_read *a, const void *h)
 	 * Test the checksum.  Note that POSIX specifies _unsigned_
 	 * bytes for this calculation.
 	 */
-	sum = (int)tar_atol(header->checksum, sizeof(header->checksum));
+	sum = (int)tar_atol((char *)header->checksum, sizeof(header->checksum));
 	check = 0;
 	for (i = 0; i < 148; i++)
 		check += (unsigned char)bytes[i];
@@ -899,8 +842,8 @@ header_Solaris_ACL(struct archive_read *a, struct tar *tar,
 	 * read_body_to_string adds a NUL terminator, but we need a little
 	 * more to make sure that we don't overrun acl_text later.
 	 */
-	header = (const struct archive_entry_header_ustar *)h;
-	size = (size_t)tar_atol(header->size, sizeof(header->size));
+	header = to_archive_entry_header_ustar_ptr(h);
+	size = (size_t)tar_atol((char *)header->size, sizeof(header->size));
 	err = read_body_to_string(a, tar, &(tar->acl_text), h, unconsumed);
 	if (err != ARCHIVE_OK)
 		return (err);
@@ -1065,8 +1008,8 @@ read_body_to_string(struct archive_read *a, struct tar *tar,
 	const void *src;
 
 	(void)tar; /* UNUSED */
-	header = (const struct archive_entry_header_ustar *)h;
-	size  = tar_atol(header->size, sizeof(header->size));
+	header = to_archive_entry_header_ustar_ptr(h);
+	size  = tar_atol((char *)header->size, sizeof(header->size));
 	if ((size > 1048576) || (size < 0)) {
 		archive_set_error(&a->archive, EINVAL,
 		    "Special header too large");
@@ -1113,19 +1056,19 @@ header_common(struct archive_read *a, struct tar *tar,
 	char	tartype;
 	int     err = ARCHIVE_OK;
 
-	header = (const struct archive_entry_header_ustar *)h;
+	header = to_archive_entry_header_ustar_ptr(h);
 	if (header->linkname[0])
 		archive_strncpy(&(tar->entry_linkpath),
-		    header->linkname, sizeof(header->linkname));
+		    (char *)header->linkname, sizeof(header->linkname));
 	else
 		archive_string_empty(&(tar->entry_linkpath));
 
 	/* Parse out the numeric fields (all are octal) */
 	archive_entry_set_mode(entry,
-		(mode_t)tar_atol(header->mode, sizeof(header->mode)));
-	archive_entry_set_uid(entry, tar_atol(header->uid, sizeof(header->uid)));
-	archive_entry_set_gid(entry, tar_atol(header->gid, sizeof(header->gid)));
-	tar->entry_bytes_remaining = tar_atol(header->size, sizeof(header->size));
+		(mode_t)tar_atol((char *)header->mode, sizeof(header->mode)));
+	archive_entry_set_uid(entry, tar_atol((char *)header->uid, sizeof(header->uid)));
+	archive_entry_set_gid(entry, tar_atol((char *)header->gid, sizeof(header->gid)));
+	tar->entry_bytes_remaining = tar_atol((char *)header->size, sizeof(header->size));
 	if (tar->entry_bytes_remaining < 0) {
 		tar->entry_bytes_remaining = 0;
 		archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
@@ -1141,7 +1084,7 @@ header_common(struct archive_read *a, struct tar *tar,
 	}
 	tar->realsize = tar->entry_bytes_remaining;
 	archive_entry_set_size(entry, tar->entry_bytes_remaining);
-	archive_entry_set_mtime(entry, tar_atol(header->mtime, sizeof(header->mtime)), 0);
+	archive_entry_set_mtime(entry, tar_atol((char *)header->mtime, sizeof(header->mtime)), 0);
 
 	/* Handle the tar type flag appropriately. */
 	tartype = header->typeflag[0];
@@ -1302,9 +1245,9 @@ header_old_tar(struct archive_read *a, struct tar *tar,
 	int err = ARCHIVE_OK, err2;
 
 	/* Copy filename over (to ensure null termination). */
-	header = (const struct archive_entry_header_ustar *)h;
+	header = to_archive_entry_header_ustar_ptr(h);
 	if (archive_entry_copy_pathname_l(entry,
-	    header->name, sizeof(header->name), tar->sconv) != 0) {
+	    (char *)header->name, sizeof(header->name), tar->sconv) != 0) {
 		err = set_conversion_failed_error(a, tar->sconv, "Pathname");
 		if (err == ARCHIVE_FATAL)
 			return (err);
@@ -1450,17 +1393,17 @@ header_ustar(struct archive_read *a, struct tar *tar,
 	struct archive_string *as;
 	int err = ARCHIVE_OK, r;
 
-	header = (const struct archive_entry_header_ustar *)h;
+	header = to_archive_entry_header_ustar_ptr(h);
 
 	/* Copy name into an internal buffer to ensure null-termination. */
 	as = &(tar->entry_pathname);
 	if (header->prefix[0]) {
-		archive_strncpy(as, header->prefix, sizeof(header->prefix));
+		archive_strncpy(as, (char *)header->prefix, sizeof(header->prefix));
 		if (as->s[archive_strlen(as) - 1] != '/')
 			archive_strappend_char(as, '/');
-		archive_strncat(as, header->name, sizeof(header->name));
+		archive_strncat(as, (char *)header->name, sizeof(header->name));
 	} else {
-		archive_strncpy(as, header->name, sizeof(header->name));
+		archive_strncpy(as, (char *)header->name, sizeof(header->name));
 	}
 	if (archive_entry_copy_pathname_l(entry, as->s, archive_strlen(as),
 	    tar->sconv) != 0) {
@@ -1478,14 +1421,14 @@ header_ustar(struct archive_read *a, struct tar *tar,
 
 	/* Handle POSIX ustar fields. */
 	if (archive_entry_copy_uname_l(entry,
-	    header->uname, sizeof(header->uname), tar->sconv) != 0) {
+	    (char *)header->uname, sizeof(header->uname), tar->sconv) != 0) {
 		err = set_conversion_failed_error(a, tar->sconv, "Uname");
 		if (err == ARCHIVE_FATAL)
 			return (err);
 	}
 
 	if (archive_entry_copy_gname_l(entry,
-	    header->gname, sizeof(header->gname), tar->sconv) != 0) {
+	    (char *)header->gname, sizeof(header->gname), tar->sconv) != 0) {
 		err = set_conversion_failed_error(a, tar->sconv, "Gname");
 		if (err == ARCHIVE_FATAL)
 			return (err);
@@ -1494,9 +1437,9 @@ header_ustar(struct archive_read *a, struct tar *tar,
 	/* Parse out device numbers only for char and block specials. */
 	if (header->typeflag[0] == '3' || header->typeflag[0] == '4') {
 		archive_entry_set_rdevmajor(entry, (dev_t)
-		    tar_atol(header->rdevmajor, sizeof(header->rdevmajor)));
+		    tar_atol((char *)header->rdevmajor, sizeof(header->rdevmajor)));
 		archive_entry_set_rdevminor(entry, (dev_t)
-		    tar_atol(header->rdevminor, sizeof(header->rdevminor)));
+		    tar_atol((char *)header->rdevminor, sizeof(header->rdevminor)));
 	}
 
 	tar->entry_padding = 0x1ff & (-tar->entry_bytes_remaining);
@@ -2070,9 +2013,9 @@ header_gnutar(struct archive_read *a, struct tar *tar,
 		return (err);
 
 	/* Copy filename over (to ensure null termination). */
-	header = (const struct archive_entry_header_gnutar *)h;
+	header = to_archive_entry_header_gnutar_ptr(h);
 	if (archive_entry_copy_pathname_l(entry,
-	    header->name, sizeof(header->name), tar->sconv) != 0) {
+	    (char *)header->name, sizeof(header->name), tar->sconv) != 0) {
 		err = set_conversion_failed_error(a, tar->sconv, "Pathname");
 		if (err == ARCHIVE_FATAL)
 			return (err);
@@ -2083,14 +2026,14 @@ header_gnutar(struct archive_read *a, struct tar *tar,
 	 * to ustar and gnu tar?  Is it okay to move it down into
 	 * header_common, perhaps?  */
 	if (archive_entry_copy_uname_l(entry,
-	    header->uname, sizeof(header->uname), tar->sconv) != 0) {
+	    (char *)header->uname, sizeof(header->uname), tar->sconv) != 0) {
 		err = set_conversion_failed_error(a, tar->sconv, "Uname");
 		if (err == ARCHIVE_FATAL)
 			return (err);
 	}
 
 	if (archive_entry_copy_gname_l(entry,
-	    header->gname, sizeof(header->gname), tar->sconv) != 0) {
+	    (char *)header->gname, sizeof(header->gname), tar->sconv) != 0) {
 		err = set_conversion_failed_error(a, tar->sconv, "Gname");
 		if (err == ARCHIVE_FATAL)
 			return (err);
@@ -2099,25 +2042,25 @@ header_gnutar(struct archive_read *a, struct tar *tar,
 	/* Parse out device numbers only for char and block specials */
 	if (header->typeflag[0] == '3' || header->typeflag[0] == '4') {
 		archive_entry_set_rdevmajor(entry, (dev_t)
-		    tar_atol(header->rdevmajor, sizeof(header->rdevmajor)));
+		    tar_atol((char *)header->rdevmajor, sizeof(header->rdevmajor)));
 		archive_entry_set_rdevminor(entry, (dev_t)
-		    tar_atol(header->rdevminor, sizeof(header->rdevminor)));
+		    tar_atol((char *)header->rdevminor, sizeof(header->rdevminor)));
 	} else
 		archive_entry_set_rdev(entry, 0);
 
 	tar->entry_padding = 0x1ff & (-tar->entry_bytes_remaining);
 
 	/* Grab GNU-specific fields. */
-	t = tar_atol(header->atime, sizeof(header->atime));
+	t = tar_atol((char *)header->atime, sizeof(header->atime));
 	if (t > 0)
 		archive_entry_set_atime(entry, t, 0);
-	t = tar_atol(header->ctime, sizeof(header->ctime));
+	t = tar_atol((char *)header->ctime, sizeof(header->ctime));
 	if (t > 0)
 		archive_entry_set_ctime(entry, t, 0);
 
 	if (header->realsize[0] != 0) {
 		tar->realsize
-		    = tar_atol(header->realsize, sizeof(header->realsize));
+		    = tar_atol((char *)header->realsize, sizeof(header->realsize));
 		archive_entry_set_size(entry, tar->realsize);
 	}
 
@@ -2185,20 +2128,21 @@ gnu_clear_sparse_list(struct tar *tar)
  * lot of criticism.
  */
 
+struct extended {
+        struct gnu_sparse sparse[21];
+        char	isextended[1];
+        char	padding[7];
+};
+
 static int
 gnu_sparse_old_read(struct archive_read *a, struct tar *tar,
     const struct archive_entry_header_gnutar *header, size_t *unconsumed)
 {
 	ssize_t bytes_read;
 	const void *data;
-	struct extended {
-		struct gnu_sparse sparse[21];
-		char	isextended[1];
-		char	padding[7];
-	};
 	const struct extended *ext;
 
-	if (gnu_sparse_old_parse(a, tar, header->sparse, 4) != ARCHIVE_OK)
+	if (gnu_sparse_old_parse(a, tar, (struct gnu_sparse *)header->sparse, 4) != ARCHIVE_OK)
 		return (ARCHIVE_FATAL);
 	if (header->isextended[0] == 0)
 		return (ARCHIVE_OK);
@@ -2230,8 +2174,8 @@ gnu_sparse_old_parse(struct archive_read *a, struct tar *tar,
 {
 	while (length > 0 && sparse->offset[0] != 0) {
 		if (gnu_add_sparse_entry(a, tar,
-		    tar_atol(sparse->offset, sizeof(sparse->offset)),
-		    tar_atol(sparse->numbytes, sizeof(sparse->numbytes)))
+		    tar_atol((char *)sparse->offset, sizeof(sparse->offset)),
+		    tar_atol((char *)sparse->numbytes, sizeof(sparse->numbytes)))
 		    != ARCHIVE_OK)
 			return (ARCHIVE_FATAL);
 		sparse++;
@@ -2555,7 +2499,7 @@ static int64_t
 tar_atol256(const char *_p, size_t char_cnt)
 {
 	uint64_t l;
-	const unsigned char *p = (const unsigned char *)_p;
+	const unsigned char *p = (const unsigned char *)(void *)_p;
 	unsigned char c, neg;
 
 	/* Extend 7-bit 2s-comp to 8-bit 2s-comp, decide sign. */
@@ -2686,7 +2630,7 @@ base64_decode(const char *s, size_t len, size_t *out_len)
 		'4','5','6','7','8','9','+','/' };
 	static unsigned char decode_table[128];
 	char *out, *d;
-	const unsigned char *src = (const unsigned char *)s;
+	const unsigned char *src = (const unsigned char *)(void *)s;
 
 	/* If the decode table is not yet initialized, prepare it. */
 	if (decode_table[digits[1]] != 1) {

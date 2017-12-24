@@ -129,7 +129,7 @@ archive_write_set_compression_compress(struct archive *a)
 int
 archive_write_add_filter_compress(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *f = __archive_write_allocate_filter(_a);
 
 	archive_check_magic(&a->archive, ARCHIVE_WRITE_MAGIC,

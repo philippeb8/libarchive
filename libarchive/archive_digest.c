@@ -82,7 +82,7 @@ win_crypto_Update(Digest_CTX *ctx, const unsigned char *buf, size_t len)
 		return (ARCHIVE_FAILED);
 
 	CryptHashData(ctx->hash,
-		      (unsigned char *)(uintptr_t)buf,
+		      (unsigned char *)buf,
 		      (DWORD)len, 0);
 	return (ARCHIVE_OK);
 }

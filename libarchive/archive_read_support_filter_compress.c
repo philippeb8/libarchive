@@ -82,6 +82,7 @@ __FBSDID("$FreeBSD$");
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_read_private.h"
+#include "archive_entry_private.h"
 
 /*
  * Because LZW decompression is pretty simple, I've just implemented
@@ -153,7 +154,7 @@ archive_read_support_compression_compress(struct archive *a)
 int
 archive_read_support_filter_compress(struct archive *_a)
 {
-	struct archive_read *a = (struct archive_read *)_a;
+	struct archive_read *a = _containerof(_a, struct archive_read, archive);
 	struct archive_read_filter_bidder *bidder;
 
 	archive_check_magic(_a, ARCHIVE_READ_MAGIC,
@@ -166,7 +167,7 @@ archive_read_support_filter_compress(struct archive *_a)
 	bidder->name = "compress (.Z)";
 	bidder->bid = compress_bidder_bid;
 	bidder->init = compress_bidder_init;
-	bidder->options = NULL;
+	bidder->options = 0;
 	bidder->free = compress_bidder_free;
 	return (ARCHIVE_OK);
 }
@@ -234,7 +235,7 @@ compress_bidder_init(struct archive_read_filter *self)
 	state->out_block_size = out_block_size;
 	state->out_block = out_block;
 	self->read = compress_filter_read;
-	self->skip = NULL; /* not supported */
+	self->skip = 0; /* not supported */
 	self->close = compress_filter_close;
 
 	/* XXX MOVE THE FOLLOWING OUT OF INIT() XXX */

@@ -69,7 +69,7 @@ static int64_t atol8(const char *, size_t);
 int
 archive_write_add_filter_uuencode(struct archive *_a)
 {
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct archive_write_filter *f = __archive_write_allocate_filter(_a);
 	struct private_uuencode *state;
 

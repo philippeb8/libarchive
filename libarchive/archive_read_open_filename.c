@@ -62,6 +62,8 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_open_filename.c 201093 2009
 #include "archive.h"
 #include "archive_private.h"
 #include "archive_string.h"
+#include "archive_entry_private.h"
+#include "archive_read_private.h"
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -70,17 +72,21 @@ __FBSDID("$FreeBSD: head/lib/libarchive/archive_read_open_filename.c 201093 2009
 #define O_CLOEXEC	0
 #endif
 
+struct filename_ {
+        char	 *m;/* MBS filename. */
+        wchar_t	 *w;/* WCS filename. */
+};
+
+enum fnt_e { FNT_STDIN, FNT_MBS, FNT_WCS };
+
 struct read_file_data {
 	int	 fd;
 	size_t	 block_size;
 	void	*buffer;
 	mode_t	 st_mode;  /* Mode bits for opened file. */
 	char	 use_lseek;
-	enum fnt_e { FNT_STDIN, FNT_MBS, FNT_WCS } filename_type;
-	union {
-		char	 m[1];/* MBS filename. */
-		wchar_t	 w[1];/* WCS filename. */
-	} filename; /* Must be last! */
+	enum fnt_e filename_type;
+	struct filename_ filename; /* Must be last! */
 };
 
 static int	file_open(struct archive *, void *);
@@ -103,10 +109,9 @@ int
 archive_read_open_filename(struct archive *a, const char *filename,
     size_t block_size)
 {
-	const char *filenames[2];
-	filenames[0] = filename;
-	filenames[1] = NULL;
-	return archive_read_open_filenames(a, filenames, block_size);
+	const char *filenames[] = {filename, NULL};
+
+        return archive_read_open_filenames(a, filenames, block_size);
 }
 
 int
@@ -124,8 +129,11 @@ archive_read_open_filenames(struct archive *a, const char **filenames,
 		if (filename == NULL)
 			filename = "";
 		mine = (struct read_file_data *)calloc(1,
-			sizeof(*mine) + strlen(filename));
+			sizeof(*mine));
 		if (mine == NULL)
+			goto no_memory;
+                mine->filename.m = malloc(strlen(filename) + 1);
+		if (mine->filename.m == NULL)
 			goto no_memory;
 		strcpy(mine->filename.m, filename);
 		mine->block_size = block_size;
@@ -160,8 +168,14 @@ archive_read_open_filename_w(struct archive *a, const wchar_t *wfilename,
     size_t block_size)
 {
 	struct read_file_data *mine = (struct read_file_data *)calloc(1,
-		sizeof(*mine) + wcslen(wfilename) * sizeof(wchar_t));
+		sizeof(*mine));
 	if (!mine)
+	{
+		archive_set_error(a, ENOMEM, "No memory");
+		return (ARCHIVE_FATAL);
+	}
+	mine->filename.w = malloc(wcslen(wfilename) * sizeof(wchar_t));
+	if (!mine->filename.w)
 	{
 		archive_set_error(a, ENOMEM, "No memory");
 		return (ARCHIVE_FATAL);
@@ -218,7 +232,7 @@ static int
 file_open(struct archive *a, void *client_data)
 {
 	struct stat st;
-	struct read_file_data *mine = (struct read_file_data *)client_data;
+	struct read_file_data *mine = client_data;
 	void *buffer;
 	const char *filename = NULL;
 	const wchar_t *wfilename = NULL;

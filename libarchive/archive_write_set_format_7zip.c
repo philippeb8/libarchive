@@ -52,6 +52,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_rb.h"
 #include "archive_string.h"
 #include "archive_write_private.h"
+#include "archive_entry_private.h"
 
 /*
  * Codec ID
@@ -139,6 +140,11 @@ struct coder {
 	uint8_t			*props;
 };
 
+struct times_ {
+        time_t		 time;
+        long		 time_ns;
+};
+
 struct file {
 	struct archive_rb_node	 rbnode;
 
@@ -153,10 +159,7 @@ struct file {
 #define CRC32_IS_SET	(1<<3)
 #define HAS_STREAM	(1<<4)
 
-	struct {
-		time_t		 time;
-		long		 time_ns;
-	}			 times[3];
+	struct times_ times[3];
 #define MTIME 0
 #define ATIME 1
 #define CTIME 2
@@ -165,6 +168,11 @@ struct file {
 	uint32_t		 crc32;
 
 	int			 dir:1;
+};
+
+struct file_ {
+        struct file	*first;
+        struct file	**last;
 };
 
 struct _7zip {
@@ -207,10 +215,7 @@ struct _7zip {
 	 * manage struct file objects.
 	 * We use 'next' a menber of struct file to chain.
 	 */
-	struct {
-		struct file	*first;
-		struct file	**last;
-	}			 file_list, empty_list;
+	struct file_ file_list, empty_list;
 	struct archive_rb_tree	 rbtree;/* for empty files */
 };
 
@@ -287,14 +292,14 @@ archive_write_set_format_7zip(struct archive *_a)
 	static const struct archive_rb_tree_ops rb_ops = {
 		file_cmp_node, file_cmp_key
 	};
-	struct archive_write *a = (struct archive_write *)_a;
+	struct archive_write *a = _containerof(_a, struct archive_write, archive);
 	struct _7zip *zip;
 
 	archive_check_magic(_a, ARCHIVE_WRITE_MAGIC,
 	    ARCHIVE_STATE_NEW, "archive_write_set_format_7zip");
 
 	/* If another format was already registered, unregister it. */
-	if (a->format_free != NULL)
+	if (a->format_free != 0)
 		(a->format_free)(a);
 
 	zip = calloc(1, sizeof(*zip));
@@ -444,7 +449,7 @@ _7z_write_header(struct archive_write *a, struct archive_entry *entry)
 	}
 	if (file->size == 0 && file->dir) {
 		if (!__archive_rb_tree_insert_node(&(zip->rbtree),
-		    (struct archive_rb_node *)file)) {
+		    _containerof(file, struct archive_rb_node, rb_nodes))) {
 			/* We have already had the same file. */
 			file_free(file);
 			return (ARCHIVE_OK);
@@ -744,7 +749,7 @@ _7z_close(struct archive_write *a)
 		}
 		/* Connect a directory file list. */
 		ARCHIVE_RB_TREE_FOREACH(n, &(zip->rbtree)) {
-			file_register(zip, (struct file *)n);
+			file_register(zip, _containerof(n, struct file, rbnode));
 		}
 
 		/*
@@ -1466,8 +1471,8 @@ static int
 file_cmp_node(const struct archive_rb_node *n1,
     const struct archive_rb_node *n2)
 {
-	const struct file *f1 = (const struct file *)n1;
-	const struct file *f2 = (const struct file *)n2;
+	const struct file *f1 = _containerof(n1, struct file, rbnode);
+	const struct file *f2 = _containerof(n2, struct file, rbnode);
 
 	if (f1->name_len == f2->name_len)
 		return (memcmp(f1->utf16name, f2->utf16name, f1->name_len));
@@ -1477,7 +1482,7 @@ file_cmp_node(const struct archive_rb_node *n1,
 static int
 file_cmp_key(const struct archive_rb_node *n, const void *key)
 {
-	const struct file *f = (const struct file *)n;
+	const struct file *f = _containerof(n, struct file, rbnode);
 
 	return (f->name_len - *(const char *)key);
 }
@@ -1688,7 +1693,7 @@ compression_init_encoder_deflate(struct archive *a,
 	/* zlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (Bytef *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (Bytef *)(const void *)lastrm->next_in;
 	strm->avail_in = (uInt)lastrm->avail_in;
 	strm->total_in = (uLong)lastrm->total_in;
 	strm->next_out = lastrm->next_out;
@@ -1721,7 +1726,7 @@ compression_code_deflate(struct archive *a,
 	/* zlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (Bytef *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (Bytef *)(const void *)lastrm->next_in;
 	strm->avail_in = (uInt)lastrm->avail_in;
 	strm->total_in = (uLong)lastrm->total_in;
 	strm->next_out = lastrm->next_out;
@@ -1801,7 +1806,7 @@ compression_init_encoder_bzip2(struct archive *a,
 	/* bzlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (char *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (char *)(const void *)lastrm->next_in;
 	strm->avail_in = lastrm->avail_in;
 	strm->total_in_lo32 = (uint32_t)(lastrm->total_in & 0xffffffff);
 	strm->total_in_hi32 = (uint32_t)(lastrm->total_in >> 32);
@@ -1834,7 +1839,7 @@ compression_code_bzip2(struct archive *a,
 	/* bzlib.h is not const-correct, so we need this one bit
 	 * of ugly hackery to convert a const * pointer to
 	 * a non-const pointer. */
-	strm->next_in = (char *)(uintptr_t)(const void *)lastrm->next_in;
+	strm->next_in = (char *)(const void *)lastrm->next_in;
 	strm->avail_in = lastrm->avail_in;
 	strm->total_in_lo32 = (uint32_t)(lastrm->total_in & 0xffffffff);
 	strm->total_in_hi32 = (uint32_t)(lastrm->total_in >> 32);
@@ -2099,7 +2104,7 @@ static void *
 ppmd_alloc(void *p, size_t size)
 {
 	(void)p;
-	return malloc(size);
+	return (CPpmd7 *)malloc(size);
 }
 static void
 ppmd_free(void *p, void *address)
@@ -2177,7 +2182,7 @@ compression_init_encoder_ppmd(struct archive *a,
 		return (ARCHIVE_FATAL);
 	}
 	__archive_ppmd7_functions.Ppmd7_Init(&(strm->ppmd7_context), maxOrder);
-	strm->byteout.a = (struct archive_write *)a;
+	strm->byteout.a = _containerof(a, struct archive_write, archive);
 	strm->byteout.Write = ppmd_write;
 	strm->range_enc.Stream = &(strm->byteout);
 	__archive_ppmd7_functions.Ppmd7z_RangeEnc_Init(&(strm->range_enc));
